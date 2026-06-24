@@ -1,4 +1,4 @@
-import { evaluateBoard, getLegalMoves, opponent, setCell } from './board'
+import { evaluateBoard, getEmptyCells, opponent, setCell } from './board'
 import type { Cell, Difficulty, Player } from './types'
 import type { GameState } from './types'
 import { getAiPlayer, getLegalMoves as stateLegalMoves } from './engine'
@@ -21,7 +21,7 @@ function minimax(
   }
   if (outcome.status === 'draw') return 0
 
-  const moves = getLegalMoves(board)
+  const moves = getEmptyCells(board)
   const isMax = current === maximizingPlayer
 
   if (isMax) {
@@ -48,7 +48,7 @@ function minimax(
 }
 
 function chooseHardMove(board: Cell[], aiPlayer: Player): number {
-  const moves = getLegalMoves(board)
+  const moves = getEmptyCells(board)
   if (moves.length === 0) throw new Error('No legal moves')
 
   let bestScore = -Infinity
@@ -71,7 +71,7 @@ function chooseHardMove(board: Cell[], aiPlayer: Player): number {
 
 /** Medium: take win, block loss, else heuristic with occasional slip. */
 function chooseMediumMove(board: Cell[], aiPlayer: Player): number {
-  const moves = getLegalMoves(board)
+  const moves = getEmptyCells(board)
   if (moves.length === 0) throw new Error('No legal moves')
   const human = opponent(aiPlayer)
 
@@ -97,7 +97,7 @@ function chooseMediumMove(board: Cell[], aiPlayer: Player): number {
 }
 
 function chooseEasyMove(board: Cell[]): number {
-  const moves = getLegalMoves(board)
+  const moves = getEmptyCells(board)
   if (moves.length === 0) throw new Error('No legal moves')
   if (Math.random() < 0.15) {
     for (const player of ['X', 'O'] as Player[]) {

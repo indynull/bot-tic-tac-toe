@@ -1,4 +1,4 @@
-import { createEmptyBoard, evaluateBoard, getLegalMoves as boardLegalMoves, isValidIndex, opponent, setCell } from './board'
+import { createEmptyBoard, evaluateBoard, getEmptyCells, isValidIndex, opponent, setCell } from './board'
 import type {
   ApplyMoveResult,
   GameState,
@@ -170,7 +170,7 @@ export function undoLastTurn(state: GameState): GameState {
 
 export function getLegalMoves(state: GameState): number[] {
   if (state.status !== 'in_progress') return []
-  return boardLegalMoves(state.board)
+  return getEmptyCells(state.board)
 }
 
 export function isAiTurn(state: GameState): boolean {

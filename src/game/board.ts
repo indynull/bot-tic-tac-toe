@@ -38,7 +38,8 @@ export function setCell(board: Cell[], index: number, player: Player): Cell[] {
   return next
 }
 
-export function getLegalMoves(board: Cell[]): number[] {
+/** Empty cell indices on a raw board (no game-status check). */
+export function getEmptyCells(board: Cell[]): number[] {
   const moves: number[] = []
   for (let i = 0; i < board.length; i++) {
     if (board[i] === null) moves.push(i)
