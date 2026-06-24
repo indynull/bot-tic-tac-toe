@@ -110,4 +110,4 @@ Key: `ttt-v1` (versioned). Stores scores + settings. Corrupt or unknown versions
 
 ## License
 
-See repository for license details.
+Personal / demo project — use freely.
