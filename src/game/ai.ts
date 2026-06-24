@@ -304,3 +304,8 @@ export function chooseMove(state: GameState, difficulty?: Difficulty): number {
 export function chooseHardMoveForBoard(board: Cell[], aiPlayer: Player): number {
   return chooseHardMove(board, aiPlayer)
 }
+
+/** Exported for tests: impossible-tier move on a raw board. */
+export function chooseImpossibleMoveForBoard(board: Cell[], aiPlayer: Player): number {
+  return chooseImpossibleMove(board, aiPlayer)
+}
