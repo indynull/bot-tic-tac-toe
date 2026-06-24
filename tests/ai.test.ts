@@ -8,8 +8,8 @@ function boardFrom(marks: (Cell)[]): Cell[] {
 
 describe('hard AI', () => {
   it('takes an instant winning move', () => {
-    // O can win on bottom row: positions 6,7,8 — 6 and 7 are O, 8 empty
-    const board = boardFrom(['X', 'X', null, null, null, null, 'O', 'O', null])
+    // O can win on bottom row: 6,7 filled, 8 empty; X does not threaten elsewhere
+    const board = boardFrom(['X', null, 'X', null, null, null, 'O', 'O', null])
     const move = chooseHardMoveForBoard(board, 'O')
     expect(move).toBe(8)
   })
@@ -23,11 +23,13 @@ describe('hard AI', () => {
 
   it('never returns illegal moves from chooseMove', () => {
     let g = createGame({ settings: { mode: 'vs_ai', humanPlayer: 'X', difficulty: 'hard' } })
-    // Human plays center
+    // Human plays center; AI's turn (O)
     const r = applyMove(g, 4)
     if (!r.ok) return
     g = r.state
+    expect(g.currentPlayer).toBe('O')
     const legal = getLegalMoves(g)
+    expect(legal.length).toBeGreaterThan(0)
     const move = chooseMove(g, 'hard')
     expect(legal).toContain(move)
   })
