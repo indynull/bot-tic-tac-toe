@@ -4,7 +4,7 @@ export type Player = 'X' | 'O'
 export type Cell = Player | null
 export type GameStatus = 'in_progress' | 'won' | 'draw'
 export type GameMode = 'local_pvp' | 'vs_ai'
-export type Difficulty = 'easy' | 'medium' | 'hard'
+export type Difficulty = 'easy' | 'medium' | 'hard' | 'impossible'
 export type Theme = 'light' | 'dark'
 
 export interface Scores {
@@ -65,8 +65,8 @@ export const DEFAULT_SCORES: Scores = { X: 0, O: 0, draws: 0 }
 export const DEFAULT_SETTINGS: Settings = {
   firstPlayer: 'X',
   humanPlayer: 'X',
-  mode: 'local_pvp',
-  difficulty: 'medium',
+  mode: 'vs_ai',
+  difficulty: 'hard',
   theme: 'light',
   soundEnabled: false,
 }

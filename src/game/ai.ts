@@ -137,6 +137,75 @@ function chooseHardMove(board: Cell[], aiPlayer: Player): number {
 }
 
 /**
+ * Opening book: on an empty board, always take center (strongest first move).
+ * If center is taken, answer with a corner — denies early fork setups.
+ */
+function openingBookMove(board: Cell[], aiPlayer: Player): number | null {
+  const empties = getEmptyCells(board)
+  const filled = 9 - empties.length
+
+  if (filled === 0) return 4 // center
+
+  if (filled === 1) {
+    // Human opened; respond optimally
+    if (board[4] === null) return 4
+    // Human took center → take a corner (prefer 0 for consistency)
+    const corners = [0, 2, 6, 8].filter((i) => board[i] === null)
+    if (corners.length > 0) return corners[0]!
+  }
+
+  if (filled === 2 && board[4] === aiPlayer) {
+    // We opened center; if human played edge, take opposite-side corner pair logic via minimax
+    // If human played corner, take opposite corner to set up
+    const human = opponent(aiPlayer)
+    const oppCorners: Record<number, number> = { 0: 8, 2: 6, 6: 2, 8: 0 }
+    for (const [corner, opposite] of Object.entries(oppCorners)) {
+      const c = Number(corner)
+      if (board[c] === human && board[opposite] === null) return opposite
+    }
+  }
+
+  return null
+}
+
+/**
+ * Impossible: perfect minimax + opening book + extra aggression.
+ * Always optimal; among draws, maximizes opponent pressure via fork bias.
+ */
+function chooseImpossibleMove(board: Cell[], aiPlayer: Player): number {
+  const book = openingBookMove(board, aiPlayer)
+  if (book !== null) {
+    // Verify book move is still optimal (paranoia check — never play sub-optimal)
+    const moves = getEmptyCells(board)
+    if (moves.includes(book)) {
+      const bookScore = minimax(
+        setCell(board, book, aiPlayer),
+        opponent(aiPlayer),
+        aiPlayer,
+        0,
+        -Infinity,
+        Infinity,
+      )
+      let bestOther = -Infinity
+      for (const m of moves) {
+        if (m === book) continue
+        const s = minimax(
+          setCell(board, m, aiPlayer),
+          opponent(aiPlayer),
+          aiPlayer,
+          0,
+          -Infinity,
+          Infinity,
+        )
+        bestOther = Math.max(bestOther, s)
+      }
+      if (bookScore >= bestOther) return book
+    }
+  }
+  return chooseHardMove(board, aiPlayer)
+}
+
+/**
  * Medium: near-optimal tactical play. Always takes wins/blocks, creates forks,
  * and only rarely (~8%) slips to a non-optimal but still legal move.
  */
@@ -224,8 +293,10 @@ export function chooseMove(state: GameState, difficulty?: Difficulty): number {
       return chooseMediumMove(board, aiPlayer)
     case 'hard':
       return chooseHardMove(board, aiPlayer)
+    case 'impossible':
+      return chooseImpossibleMove(board, aiPlayer)
     default:
-      return chooseHardMove(board, aiPlayer)
+      return chooseImpossibleMove(board, aiPlayer)
   }
 }
 

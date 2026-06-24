@@ -38,6 +38,39 @@ describe('hard AI', () => {
     const move = chooseMove(g, 'hard')
     expect(legal).toContain(move)
   })
+
+  it('opens with center on empty board', () => {
+    const board = boardFrom([null, null, null, null, null, null, null, null, null])
+    const move = chooseHardMoveForBoard(board, 'X')
+    expect(move).toBe(4)
+  })
+})
+
+describe('impossible AI', () => {
+  it('takes winning moves and blocks like hard', () => {
+    const board = boardFrom(['X', 'X', null, null, 'O', null, null, null, null])
+    let g = createGame({
+      settings: { mode: 'vs_ai', humanPlayer: 'X', difficulty: 'impossible', firstPlayer: 'O' },
+    })
+    // Build via chooseMove on a real state: simpler to use chooseMove after setup sequence
+    g = createGame({ settings: { mode: 'vs_ai', humanPlayer: 'X', difficulty: 'impossible' } })
+    const seq = [0, 6, 1, 7, 3] // X O X O X — O can win at 8
+    for (const m of seq) {
+      const r = applyMove(g, m)
+      if (!r.ok) throw new Error('setup failed')
+      g = r.state
+    }
+    expect(chooseMove(g, 'impossible')).toBe(8)
+  })
+
+  it('responds to center opening with a corner', () => {
+    let g = createGame({ settings: { mode: 'vs_ai', humanPlayer: 'X', difficulty: 'impossible' } })
+    const r = applyMove(g, 4)
+    if (!r.ok) throw new Error('setup failed')
+    g = r.state
+    const move = chooseMove(g, 'impossible')
+    expect([0, 2, 6, 8]).toContain(move)
+  })
 })
 
 describe('easy AI', () => {

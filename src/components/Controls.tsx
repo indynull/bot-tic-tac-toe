@@ -50,6 +50,7 @@ export function Controls({
               <option value="easy">Easy</option>
               <option value="medium">Medium</option>
               <option value="hard">Hard</option>
+              <option value="impossible">Impossible</option>
             </select>
           </label>
         )}
