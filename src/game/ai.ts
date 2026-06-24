@@ -1,6 +1,5 @@
 import { evaluateBoard, getEmptyCells, opponent, setCell } from './board'
-import type { Cell, Difficulty, Player } from './types'
-import type { GameState } from './types'
+import type { Cell, Difficulty, GameState, Player } from './types'
 import { WIN_LINES } from './types'
 import { getAiPlayer, getLegalMoves as stateLegalMoves } from './engine'
 
@@ -38,7 +37,9 @@ function createsFork(board: Cell[], move: number, player: Player): boolean {
 /**
  * Quiet-position heuristic for move ordering / tie-breaking among equal minimax scores.
  * Prefers: instant wins > blocks > forks > center > corners > edges.
- * Micro-scores are tiny so they never override true minimax win/loss/draw outcomes.
+ * Large tactical bonuses (+100/+50/…) are only safe because this is never used as a
+ * minimax leaf score — only to rank moves that already share the same minimax value.
+ * Position weights are micro (×0.001) so they only decide among otherwise-equal tactics.
  */
 function positionHeuristic(board: Cell[], move: number, aiPlayer: Player): number {
   const human = opponent(aiPlayer)
@@ -66,8 +67,9 @@ function orderedMoves(board: Cell[], player: Player): number[] {
 
 /**
  * Full minimax with depth preference (faster wins / slower losses).
- * Score from `maximizingPlayer` perspective: ~10 win, ~-10 loss, 0 draw.
- * Move ordering improves pruning on larger search trees.
+ * Score from `maximizingPlayer` perspective: ~1000 win, ~-1000 loss, 0 draw,
+ * with ±10 per ply so quicker wins / slower losses rank higher.
+ * Move ordering is an optimization only (correctness does not depend on it on 3×3).
  */
 function minimax(
   board: Cell[],
@@ -111,28 +113,59 @@ function minimax(
 }
 
 /**
- * Optimal play: minimax + heuristic tie-break among equally scored moves.
- * Never picks a sub-optimal line; among perfect lines, picks the most punishing.
+ * Collect all minimax-optimal moves (same best score). On 3×3 this set is usually small.
  */
-function chooseHardMove(board: Cell[], aiPlayer: Player): number {
+function optimalMoves(board: Cell[], aiPlayer: Player): number[] {
   const moves = getEmptyCells(board)
   if (moves.length === 0) throw new Error('No legal moves')
 
   let bestScore = -Infinity
-  let bestTieBreak = -Infinity
-  let bestMove = moves[0]!
+  const best: number[] = []
 
   for (const m of moves) {
     const next = setCell(board, m, aiPlayer)
     const score = minimax(next, opponent(aiPlayer), aiPlayer, 0, -Infinity, Infinity)
-    const tie = positionHeuristic(board, m, aiPlayer)
-    if (score > bestScore || (score === bestScore && tie > bestTieBreak)) {
+    if (score > bestScore) {
       bestScore = score
-      bestTieBreak = tie
-      bestMove = m
+      best.length = 0
+      best.push(m)
+    } else if (score === bestScore) {
+      best.push(m)
     }
   }
 
+  return best
+}
+
+/**
+ * Hard: optimal minimax play. Among equally optimal lines, pick randomly so games
+ * vary while remaining unbeatable with perfect opponent play.
+ */
+function chooseHardMove(board: Cell[], aiPlayer: Player): number {
+  return randomChoice(optimalMoves(board, aiPlayer))
+}
+
+/**
+ * Impossible: optimal minimax + deterministic fork/position tie-breaks + opening book.
+ * Always optimal; among draws, maximizes opponent pressure (no random variety).
+ */
+function chooseImpossibleMove(board: Cell[], aiPlayer: Player): number {
+  const book = openingBookMove(board, aiPlayer)
+  if (book !== null) {
+    const optimal = optimalMoves(board, aiPlayer)
+    if (optimal.includes(book)) return book
+  }
+
+  const optimal = optimalMoves(board, aiPlayer)
+  let bestTie = -Infinity
+  let bestMove = optimal[0]!
+  for (const m of optimal) {
+    const tie = positionHeuristic(board, m, aiPlayer)
+    if (tie > bestTie) {
+      bestTie = tie
+      bestMove = m
+    }
+  }
   return bestMove
 }
 
@@ -169,45 +202,9 @@ function openingBookMove(board: Cell[], aiPlayer: Player): number | null {
 }
 
 /**
- * Impossible: perfect minimax + opening book + extra aggression.
- * Always optimal; among draws, maximizes opponent pressure via fork bias.
- */
-function chooseImpossibleMove(board: Cell[], aiPlayer: Player): number {
-  const book = openingBookMove(board, aiPlayer)
-  if (book !== null) {
-    // Verify book move is still optimal (paranoia check — never play sub-optimal)
-    const moves = getEmptyCells(board)
-    if (moves.includes(book)) {
-      const bookScore = minimax(
-        setCell(board, book, aiPlayer),
-        opponent(aiPlayer),
-        aiPlayer,
-        0,
-        -Infinity,
-        Infinity,
-      )
-      let bestOther = -Infinity
-      for (const m of moves) {
-        if (m === book) continue
-        const s = minimax(
-          setCell(board, m, aiPlayer),
-          opponent(aiPlayer),
-          aiPlayer,
-          0,
-          -Infinity,
-          Infinity,
-        )
-        bestOther = Math.max(bestOther, s)
-      }
-      if (bookScore >= bestOther) return book
-    }
-  }
-  return chooseHardMove(board, aiPlayer)
-}
-
-/**
- * Medium: near-optimal tactical play. Always takes wins/blocks, creates forks,
- * and only rarely (~8%) slips to a non-optimal but still legal move.
+ * Medium: tactical play without full minimax. Always takes wins/blocks, creates/blocks
+ * forks when obvious, otherwise uses a fixed cell priority with a ~20% random slip so
+ * it stays beatable and clearly weaker than hard/impossible.
  */
 function chooseMediumMove(board: Cell[], aiPlayer: Player): number {
   const moves = getEmptyCells(board)
@@ -229,21 +226,19 @@ function chooseMediumMove(board: Cell[], aiPlayer: Player): number {
     if (createsFork(board, m, aiPlayer)) return m
   }
 
-  // Block opponent fork
+  // Block opponent fork (single threat only — multi-fork needs search; medium slips here)
   const forkBlocks = moves.filter((m) => createsFork(board, m, human))
   if (forkBlocks.length === 1) return forkBlocks[0]!
-  if (forkBlocks.length > 1) {
-    // Multiple fork threats: fall back to optimal minimax (rare on 3×3)
-    return chooseHardMove(board, aiPlayer)
-  }
 
-  // Small slip chance so medium isn't literally impossible
-  if (Math.random() < 0.08) {
+  if (Math.random() < 0.2) {
     return randomChoice(moves)
   }
 
-  // Otherwise use full optimal play
-  return chooseHardMove(board, aiPlayer)
+  const priority = [4, 0, 2, 6, 8, 1, 3, 5, 7]
+  for (const p of priority) {
+    if (moves.includes(p)) return p
+  }
+  return randomChoice(moves)
 }
 
 /**
@@ -296,7 +291,8 @@ export function chooseMove(state: GameState, difficulty?: Difficulty): number {
     case 'impossible':
       return chooseImpossibleMove(board, aiPlayer)
     default:
-      return chooseImpossibleMove(board, aiPlayer)
+      // Conservative runtime fallback if an unexpected value sneaks in (e.g. bad storage).
+      return chooseEasyMove(board, aiPlayer)
   }
 }
 
