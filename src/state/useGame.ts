@@ -28,10 +28,12 @@ export function useGame() {
   )
   const [aiThinking, setAiThinking] = useState(false)
   const aiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const aiGenerationRef = useRef(0)
   const stateRef = useRef(state)
   stateRef.current = state
 
   const clearAiTimer = useCallback(() => {
+    aiGenerationRef.current += 1
     if (aiTimerRef.current !== null) {
       clearTimeout(aiTimerRef.current)
       aiTimerRef.current = null
@@ -55,19 +57,30 @@ export function useGame() {
     [persist],
   )
 
-  const scheduleAiMove = useCallback(() => {
-    clearAiTimer()
-    const snapshot = stateRef.current
-    if (!isAiTurn(snapshot)) return
+  // Drive AI turns from a single effect keyed by turn identity.
+  useEffect(() => {
+    if (!isAiTurn(state)) {
+      if (aiTimerRef.current !== null) {
+        clearTimeout(aiTimerRef.current)
+        aiTimerRef.current = null
+      }
+      setAiThinking(false)
+      return
+    }
 
+    const generation = ++aiGenerationRef.current
     setAiThinking(true)
+
     aiTimerRef.current = setTimeout(() => {
       aiTimerRef.current = null
+      if (generation !== aiGenerationRef.current) return
+
       const current = stateRef.current
       if (!isAiTurn(current)) {
         setAiThinking(false)
         return
       }
+
       try {
         const idx = chooseMove(current, current.settings.difficulty)
         const result = applyMove(current, idx)
@@ -80,26 +93,30 @@ export function useGame() {
         else if (result.state.status === 'draw') sound = 'draw'
         commit(result.state, { sound })
       } finally {
-        setAiThinking(false)
+        if (generation === aiGenerationRef.current) {
+          setAiThinking(false)
+        }
       }
     }, AI_DELAY_MS)
-  }, [clearAiTimer, commit])
 
-  // Trigger AI when it becomes AI's turn.
-  useEffect(() => {
-    if (isAiTurn(state)) {
-      scheduleAiMove()
-    } else {
-      clearAiTimer()
-    }
     return () => {
-      // Do not clear on every state change before timeout — only unmount handled below.
+      // Invalidate this scheduled move on re-run / unmount (StrictMode safe).
+      aiGenerationRef.current += 1
+      if (aiTimerRef.current !== null) {
+        clearTimeout(aiTimerRef.current)
+        aiTimerRef.current = null
+      }
     }
-  }, [state.board, state.currentPlayer, state.status, state.settings.mode, state.settings.humanPlayer, state.settings.difficulty, scheduleAiMove, clearAiTimer, state])
+  }, [
+    state.board.join(','),
+    state.currentPlayer,
+    state.status,
+    state.settings.mode,
+    state.settings.humanPlayer,
+    state.settings.difficulty,
+    commit,
+  ])
 
-  useEffect(() => () => clearAiTimer(), [clearAiTimer])
-
-  // Apply theme to document
   useEffect(() => {
     document.documentElement.dataset.theme = state.settings.theme
   }, [state.settings.theme])
@@ -149,7 +166,13 @@ export function useGame() {
       const restart = opts?.restart ?? false
       const midGame = current.moveHistory.length > 0 && current.status === 'in_progress'
 
-      if (restart || (midGame && (patch.mode !== undefined || patch.humanPlayer !== undefined || patch.firstPlayer !== undefined))) {
+      if (
+        restart ||
+        (midGame &&
+          (patch.mode !== undefined ||
+            patch.humanPlayer !== undefined ||
+            patch.firstPlayer !== undefined))
+      ) {
         const next = resetGame(current, { preserveScores: true, settings })
         commit(next)
         return
@@ -161,12 +184,27 @@ export function useGame() {
     [clearAiTimer, commit],
   )
 
-  const setMode = useCallback((mode: GameMode) => patchSettings({ mode }, { restart: true }), [patchSettings])
-  const setDifficulty = useCallback((difficulty: Difficulty) => patchSettings({ difficulty }), [patchSettings])
+  const setMode = useCallback(
+    (mode: GameMode) => patchSettings({ mode }, { restart: true }),
+    [patchSettings],
+  )
+  const setDifficulty = useCallback(
+    (difficulty: Difficulty) => patchSettings({ difficulty }),
+    [patchSettings],
+  )
   const setTheme = useCallback((theme: Theme) => patchSettings({ theme }), [patchSettings])
-  const setSoundEnabled = useCallback((soundEnabled: boolean) => patchSettings({ soundEnabled }), [patchSettings])
-  const setFirstPlayer = useCallback((firstPlayer: Player) => patchSettings({ firstPlayer }, { restart: true }), [patchSettings])
-  const setHumanPlayer = useCallback((humanPlayer: Player) => patchSettings({ humanPlayer }, { restart: true }), [patchSettings])
+  const setSoundEnabled = useCallback(
+    (soundEnabled: boolean) => patchSettings({ soundEnabled }),
+    [patchSettings],
+  )
+  const setFirstPlayer = useCallback(
+    (firstPlayer: Player) => patchSettings({ firstPlayer }, { restart: true }),
+    [patchSettings],
+  )
+  const setHumanPlayer = useCallback(
+    (humanPlayer: Player) => patchSettings({ humanPlayer }, { restart: true }),
+    [patchSettings],
+  )
 
   const boardLocked = aiThinking || isAiTurn(state) || state.status !== 'in_progress'
 
