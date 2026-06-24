@@ -3,6 +3,7 @@ import { evaluateBoard } from './evaluate'
 import type {
   CreateGameOptions,
   GameState,
+  GameStatus,
   MoveResult,
   Player,
   ResetGameOptions,
@@ -152,7 +153,7 @@ export function undoMove(state: GameState): GameState {
 
   let board = createEmptyBoard()
   let currentPlayer: Player = state.settings.firstPlayer
-  let status = 'in_progress' as const
+  let status: GameStatus = 'in_progress'
   let winner: Player | null = null
   let winningLine: number[] | null = null
 
@@ -160,7 +161,7 @@ export function undoMove(state: GameState): GameState {
     board = placeMark(board, move.cellIndex, move.player)
     const evaluation = evaluateBoard(board)
     if (evaluation.status !== 'in_progress') {
-      status = evaluation.status as 'won' | 'draw'
+      status = evaluation.status
       winner = evaluation.winner
       winningLine = evaluation.winningLine
       currentPlayer = move.player
@@ -169,13 +170,10 @@ export function undoMove(state: GameState): GameState {
     currentPlayer = oppositePlayer(move.player)
   }
 
-  // If rebuild ended terminal, scores should already reflect that from state.scores adjustment above only for undone game.
-  // After undo of a finished game, board is in-progress so scores were decremented once.
-
   const next: GameState = {
     board,
     currentPlayer: status === 'in_progress' ? currentPlayer : (winner ?? currentPlayer),
-    status: status === 'in_progress' ? 'in_progress' : status,
+    status,
     winner,
     winningLine,
     moveHistory: history,
@@ -183,11 +181,9 @@ export function undoMove(state: GameState): GameState {
     settings: { ...state.settings },
   }
 
-  // If somehow still terminal after undo (shouldn't happen unless history empty of incomplete), don't re-add scores.
+  // Rare: history still terminal after pop — re-award using adjusted scores baseline.
   if (next.status === 'won' || next.status === 'draw') {
-    // Scores were already adjusted by removing the previous terminal award; terminal after partial undo is rare.
-    // Re-award if we landed on another terminal (e.g. multi-undo not implemented).
-    return withTerminalScores({ ...next, scores })
+    return withTerminalScores(next)
   }
 
   return next

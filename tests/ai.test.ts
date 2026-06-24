@@ -66,15 +66,15 @@ describe('easy AI', () => {
 
 describe('medium AI', () => {
   it('takes win when available', () => {
-    // O to move with O O _ on top
+    // Human X, AI O. After five plies O has O O _ on top and it is O's turn.
     let state = createGame({ mode: 'vs_ai', humanPlayer: 'X', difficulty: 'medium' })
-    // Force board via moves: X4, O0, X8, O1 — O can win at 2
-    for (const idx of [4, 0, 8, 1]) {
+    for (const idx of [5, 0, 8, 1, 7]) {
       const r = applyMove(state, idx)
       if (!r.ok) throw new Error('setup')
       state = r.state
     }
     expect(state.currentPlayer).toBe('O')
+    expect(state.board.slice(0, 3)).toEqual(['O', 'O', null])
     const move = chooseMove(state, 'medium')
     expect(move).toBe(2)
   })
