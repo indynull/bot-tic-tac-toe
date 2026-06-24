@@ -1,0 +1,88 @@
+.board {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  width: min(100%, 360px);
+  aspect-ratio: 1;
+  margin: 0 auto;
+}
+
+.drawBoard {
+  outline: 2px dashed var(--border);
+  outline-offset: 6px;
+  border-radius: var(--radius);
+}
+
+.cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--cell-bg);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s ease, transform 0.1s ease, border-color 0.15s ease;
+}
+
+.cell:hover:not(:disabled) {
+  background: var(--cell-hover);
+}
+
+.cell:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.cell:disabled {
+  cursor: default;
+}
+
+.occupied {
+  cursor: default;
+}
+
+.winning {
+  background: var(--win-bg) !important;
+  border-color: var(--win-border);
+  animation: pulseWin 0.8s ease;
+}
+
+.mark {
+  font-size: clamp(2rem, 12vw, 3.25rem);
+  font-weight: 800;
+  line-height: 1;
+  animation: popIn 0.25s ease;
+  user-select: none;
+}
+
+.markX .mark {
+  color: var(--x-color);
+}
+
+.markO .mark {
+  color: var(--o-color);
+}
+
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes pulseWin {
+  0%,
+  100% {
+    box-shadow: none;
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--win-border) 40%, transparent);
+  }
+}

@@ -1,0 +1,60 @@
+.app {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 1rem 1rem 2rem;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.header {
+  text-align: center;
+  padding-top: 0.5rem;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(1.75rem, 5vw, 2.25rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--accent);
+}
+
+.tagline {
+  margin: 0.35rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 4px);
+  padding: 1rem;
+  box-shadow: var(--shadow);
+}
+
+.footer {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.footer p {
+  margin: 0;
+}
+
+@media (min-width: 768px) {
+  .app {
+    padding: 2rem 1rem 3rem;
+  }
+
+  .main {
+    padding: 1.5rem;
+  }
+}

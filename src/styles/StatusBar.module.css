@@ -1,0 +1,25 @@
+.status {
+  text-align: center;
+  font-size: 1.1rem;
+  font-weight: 700;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--text);
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.won {
+  background: var(--win-bg);
+}
+
+.draw {
+  background: var(--draw-bg);
+}
+
+.progress {
+  background: var(--accent-soft);
+}
