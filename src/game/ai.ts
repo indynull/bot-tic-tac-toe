@@ -7,17 +7,21 @@ function randomChoice<T>(items: T[]): T {
   return items[Math.floor(Math.random() * items.length)]!
 }
 
-/** Full minimax: returns best score from `maximizingPlayer` perspective (+1 win, -1 loss, 0 draw). */
+/**
+ * Full minimax with depth preference (faster wins / slower losses).
+ * Score from `maximizingPlayer` perspective: ~10 win, ~-10 loss, 0 draw.
+ */
 function minimax(
   board: Cell[],
   current: Player,
   maximizingPlayer: Player,
+  depth: number,
   alpha: number,
   beta: number,
 ): number {
   const outcome = evaluateBoard(board)
   if (outcome.status === 'won') {
-    return outcome.winner === maximizingPlayer ? 1 : -1
+    return outcome.winner === maximizingPlayer ? 10 - depth : depth - 10
   }
   if (outcome.status === 'draw') return 0
 
@@ -28,7 +32,7 @@ function minimax(
     let best = -Infinity
     for (const m of moves) {
       const next = setCell(board, m, current)
-      const score = minimax(next, opponent(current), maximizingPlayer, alpha, beta)
+      const score = minimax(next, opponent(current), maximizingPlayer, depth + 1, alpha, beta)
       best = Math.max(best, score)
       alpha = Math.max(alpha, best)
       if (beta <= alpha) break
@@ -39,7 +43,7 @@ function minimax(
   let best = Infinity
   for (const m of moves) {
     const next = setCell(board, m, current)
-    const score = minimax(next, opponent(current), maximizingPlayer, alpha, beta)
+    const score = minimax(next, opponent(current), maximizingPlayer, depth + 1, alpha, beta)
     best = Math.min(best, score)
     beta = Math.min(beta, best)
     if (beta <= alpha) break
@@ -56,7 +60,7 @@ function chooseHardMove(board: Cell[], aiPlayer: Player): number {
 
   for (const m of moves) {
     const next = setCell(board, m, aiPlayer)
-    const score = minimax(next, opponent(aiPlayer), aiPlayer, -Infinity, Infinity)
+    const score = minimax(next, opponent(aiPlayer), aiPlayer, 0, -Infinity, Infinity)
     if (score > bestScore) {
       bestScore = score
       bestMoves.length = 0

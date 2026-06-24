@@ -8,10 +8,15 @@ function boardFrom(marks: (Cell)[]): Cell[] {
 
 describe('hard AI', () => {
   it('takes an instant winning move', () => {
-    // O can win on bottom row: 6,7 filled, 8 empty; X does not threaten elsewhere
+    // O can win on bottom row: 6,7 filled, 8 empty (also could block at 1; must prefer win)
     const board = boardFrom(['X', null, 'X', null, null, null, 'O', 'O', null])
     const move = chooseHardMoveForBoard(board, 'O')
     expect(move).toBe(8)
+    const after = board.slice()
+    after[move] = 'O'
+    expect(after[6]).toBe('O')
+    expect(after[7]).toBe('O')
+    expect(after[8]).toBe('O')
   })
 
   it('blocks opponent winning move', () => {
