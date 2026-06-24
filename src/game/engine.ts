@@ -131,17 +131,6 @@ export function undoMove(state: GameState): GameState {
   }
 
   const history = state.moveHistory.slice(0, -1)
-  let rebuilt = createGame({
-    ...state.settings,
-    scores: cloneScores(state.scores),
-  })
-
-  // Revert any score increments from the undone terminal position.
-  // We rebuild without scoring, then re-apply terminal scoring only if the new position is terminal.
-  rebuilt = {
-    ...rebuilt,
-    scores: cloneScores(state.scores),
-  }
 
   // If previous state was terminal, subtract the point that was awarded.
   let scores = cloneScores(state.scores)
