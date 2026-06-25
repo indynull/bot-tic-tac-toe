@@ -41,14 +41,6 @@ function isSettings(v: unknown): v is Settings {
   )
 }
 
-function isProgression(v: unknown): v is ProgressionState {
-  if (!v || typeof v !== 'object') return false
-  const p = v as Record<string, unknown>
-  if (typeof p.boardSize !== 'number') return false
-  const size = clampBoardSize(p.boardSize)
-  return size === p.boardSize
-}
-
 /** Migrate v1/v2 progression (may include obsolete pendingEscalation) → v3 shape. */
 function normalizeProgression(raw: unknown): ProgressionState {
   if (!raw || typeof raw !== 'object') return { ...DEFAULT_PROGRESSION }
