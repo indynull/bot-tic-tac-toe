@@ -58,13 +58,15 @@ export function Controls({
 
       <div className={styles.actions}>
         <button type="button" className={styles.primary} onClick={onNewGame}>
-          New game
+          {game.ladderAdvanced && game.ladderSize > game.boardSize
+            ? `New game (${game.ladderSize}×${game.ladderSize})`
+            : 'New game'}
         </button>
         <button type="button" onClick={onUndo} disabled={!canUndo}>
           Undo
         </button>
-        <button type="button" onClick={onResetScores}>
-          Reset scores
+        <button type="button" onClick={onResetScores} title="Clear scores and return to 3×3">
+          Reset ladder
         </button>
         <button type="button" onClick={onOpenSettings}>
           Settings

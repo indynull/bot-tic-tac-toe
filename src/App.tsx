@@ -36,8 +36,10 @@ export default function App() {
       <header className={appStyles.header}>
         <h1 className={appStyles.title}>Tic-Tac-Toe</h1>
         <p className={appStyles.tagline}>
-          Local PvP &amp; vs computer — full boards grow in place (keep your marks)
-          {ctrl.game.boardSize > 3 ? ` · now ${ctrl.game.boardSize}×${ctrl.game.boardSize}` : ''}
+          Local PvP &amp; vs computer
+          {ctrl.game.boardSize > 3
+            ? ` · ${ctrl.game.boardSize}×${ctrl.game.boardSize}, ${ctrl.game.winLength} in a row`
+            : ' · draws unlock a bigger board next game'}
         </p>
       </header>
 

@@ -251,16 +251,17 @@ describe('status messages', () => {
       settings: { mode: 'vs_ai', humanPlayer: 'X', difficulty: 'impossible' },
     })
     g = { ...g, status: 'draw', winner: null }
-    expect(getStatusMessage(g, false)).toContain('max board size')
+    expect(getStatusMessage(g, false)).toContain('max board')
   })
 
-  it('announces in-place growth via justGrew status copy', () => {
+  it('announces ladder advance after a draw', () => {
     const g = {
-      ...createGame({ boardSize: 4, settings: { mode: 'local_pvp' } }),
-      justGrew: true,
-      previousBoardSize: 3 as const,
+      ...createGame({ boardSize: 3, settings: { mode: 'local_pvp' } }),
+      status: 'draw' as const,
+      ladderSize: 4 as const,
+      ladderAdvanced: true,
     }
-    expect(getStatusMessage(g, false)).toContain('Board grew 3×3 → 4×4')
+    expect(getStatusMessage(g, false)).toContain('next game is 4×4')
   })
 
   it('uses deeper thinking copy on hard while AI thinks', () => {
