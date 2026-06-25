@@ -95,16 +95,19 @@ Variable **N×N** array (`boardSize` 3–7), row-major: `index = row * boardSize
 2. The **next** new game uses a larger empty board: 3 → 4 → … up to 7 (stored as `ladderSize`).
 3. Win length scales: **3** on 3×3, **4** on 4×4/5×5, **5** on 6×6/7×7 (playable ladder).
 4. Wins keep the current size for the next game; only draws climb the ladder.
-5. Vs computer: leaving 3×3 via a draw tiers difficulty up one step; on 4×4+ AI is shallow/tactical.
+5. Vs computer: any ladder-advancing draw tiers difficulty up one step; on 4×4–6×6 hard/impossible use shallow minimax, on 7×7 tactical only (no slips).
 6. **Reset ladder** clears scores and returns to classic 3×3.
+7. Fresh / corrupt storage defaults: **vs computer**, **impossible**, human plays **O** (computer opens as X). Entering vs AI from PvP floors easy/medium up to **hard**.
 
 ### AI notes
 
 | Board | easy | medium | hard | impossible |
 |-------|------|--------|------|------------|
-| **3×3** | mostly random | tactical | optimal minimax | optimal + book/forks |
-| **4×4** | mostly random | tactical | shallow minimax (depth 3) | shallow + deterministic ties |
-| **5×5+** | mostly random | tactical | **tactical only** (fast) | **tactical only** (fast) |
+| **3×3** | always takes wins; ~55% blocks/forks | tactical (~5% slips) | optimal minimax | optimal + book/forks |
+| **4×4** | always takes wins; ~55% blocks/forks | tactical (~5% slips) | shallow minimax (depth 4) | deeper shallow (depth 5) + deterministic ties |
+| **5×5** | always takes wins; ~55% blocks/forks | tactical (~5% slips) | shallow minimax (depth 1) | shallow minimax (depth 2) |
+| **6×6** | always takes wins; ~55% blocks/forks | tactical (~5% slips) | shallow minimax (depth 1) | shallow minimax (depth 1) |
+| **7×7** | always takes wins; ~55% blocks/forks | tactical (~5% slips) | **tactical only** (no slips) | **tactical only** (no slips) |
 
 Tier names are historical; settings copy and `aiPolicyNote()` describe the real policy. Hard/impossible are only fully optimal on classic 3×3.
 
