@@ -25,7 +25,10 @@ function isSettings(v: unknown): v is Settings {
     isPlayer(s.firstPlayer) &&
     isPlayer(s.humanPlayer) &&
     (s.mode === 'local_pvp' || s.mode === 'vs_ai') &&
-    (s.difficulty === 'easy' || s.difficulty === 'medium' || s.difficulty === 'hard') &&
+    (s.difficulty === 'easy' ||
+      s.difficulty === 'medium' ||
+      s.difficulty === 'hard' ||
+      s.difficulty === 'impossible') &&
     (s.theme === 'light' || s.theme === 'dark') &&
     typeof s.soundEnabled === 'boolean'
   )

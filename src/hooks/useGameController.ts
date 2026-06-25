@@ -18,7 +18,22 @@ import {
   type Theme,
 } from '../game'
 
-const AI_DELAY_MS = 450
+/** Thinking delay scales with difficulty — hard/impossible feels deliberate & unnerving. */
+function aiDelayMs(difficulty: Difficulty): number {
+  switch (difficulty) {
+    case 'easy':
+      return 280
+    case 'medium':
+      return 450
+    case 'hard':
+      return 700
+    case 'impossible':
+      // Variable "calculating..." pause — keeps the human on edge
+      return 850 + Math.floor(Math.random() * 650)
+    default:
+      return 700
+  }
+}
 
 function initialState(): GameState {
   const { scores, settings } = loadPersisted()
@@ -75,7 +90,7 @@ export function useGameController() {
       } finally {
         setAiThinking(false)
       }
-    }, AI_DELAY_MS)
+    }, aiDelayMs(state.settings.difficulty))
   }, [clearAiTimer])
 
   // Trigger AI when it's their turn

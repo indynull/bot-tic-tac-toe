@@ -35,7 +35,9 @@ export default function App() {
     <div className={appStyles.app}>
       <header className={appStyles.header}>
         <h1 className={appStyles.title}>Tic-Tac-Toe</h1>
-        <p className={appStyles.tagline}>Local PvP &amp; vs computer — classic 3×3</p>
+        <p className={appStyles.tagline}>
+          Local PvP &amp; vs computer — try beating hard or impossible mode
+        </p>
       </header>
 
       <main className={appStyles.main}>
