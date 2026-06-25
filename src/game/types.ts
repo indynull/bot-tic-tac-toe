@@ -149,8 +149,11 @@ export function aiPolicyNote(boardSize: BoardSize, difficulty: Difficulty): stri
 
 export const DEFAULT_SETTINGS: Settings = {
   firstPlayer: 'X',
-  /** Human plays X; AI is O and moves second — still brutal at impossible. */
-  humanPlayer: 'X',
+  /**
+   * Agrajag pass: human plays O so the computer opens as X on impossible.
+   * (Other passes already set vs_ai/impossible; this removes the human first-move edge.)
+   */
+  humanPlayer: 'O',
   /** Fresh installs land in vs computer so the challenge is immediate. */
   mode: 'vs_ai',
   difficulty: 'impossible',

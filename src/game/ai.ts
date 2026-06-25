@@ -19,9 +19,9 @@ interface BoardContext {
  */
 function maxSearchDepth(boardSize: BoardSize, difficulty: Difficulty = 'hard'): number {
   if (boardSize <= 3) return 20
-  // Impossible earns an extra ply on 4×4; depth 5 is still interactive on CI.
+  // Impossible earns an extra ply on 4×4/5×5; depths stay interactive on CI.
   if (boardSize === 4) return difficulty === 'impossible' ? 5 : 4
-  if (boardSize === 5) return 2
+  if (boardSize === 5) return difficulty === 'impossible' ? 2 : 1
   if (boardSize === 6) return 1
   return 1
 }
@@ -225,7 +225,8 @@ function optimalMoves(
  */
 function chooseHardMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number {
   if (prefersTacticalHard(ctx.boardSize)) {
-    return chooseMediumMove(board, aiPlayer, ctx)
+    // No random slips on the tactical-only rung (Agrajag: discipline on 7×7).
+    return chooseMediumMove(board, aiPlayer, ctx, /*allowSlip*/ false)
   }
   return randomChoice(optimalMoves(board, aiPlayer, ctx, 'hard'))
 }
@@ -331,9 +332,15 @@ function priorityIndices(boardSize: BoardSize): number[] {
 
 /**
  * Medium: tactical play without full minimax. Always takes wins/blocks, creates/blocks
- * forks when obvious, otherwise uses cell priority with a small (~8%) random slip.
+ * forks when obvious, otherwise uses cell priority with a rare (~5%) random slip.
+ * Hard/impossible 7×7 fallbacks pass allowSlip=false (Agrajag: no gifts on the top rung).
  */
-function chooseMediumMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number {
+function chooseMediumMove(
+  board: Cell[],
+  aiPlayer: Player,
+  ctx: BoardContext,
+  allowSlip = true,
+): number {
   const moves = getEmptyCells(board)
   if (moves.length === 0) throw new Error('No legal moves')
   const human = opponent(aiPlayer)
@@ -353,14 +360,14 @@ function chooseMediumMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): n
   const forkBlocks = moves.filter((m) => createsFork(board, m, human, ctx))
   if (forkBlocks.length === 1) return forkBlocks[0]!
 
-  if (Math.random() < 0.08) {
+  if (allowSlip && Math.random() < 0.05) {
     return randomChoice(moves)
   }
 
   for (const p of priorityIndices(ctx.boardSize)) {
     if (moves.includes(p)) return p
   }
-  return randomChoice(moves)
+  return allowSlip ? randomChoice(moves) : (moves[0] ?? priorityIndices(ctx.boardSize)[0]!)
 }
 
 /**
