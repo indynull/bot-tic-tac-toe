@@ -4,7 +4,7 @@ export type Player = 'X' | 'O'
 export type Cell = Player | null
 export type GameStatus = 'in_progress' | 'won' | 'draw'
 export type GameMode = 'local_pvp' | 'vs_ai'
-export type Difficulty = 'easy' | 'medium' | 'hard'
+export type Difficulty = 'easy' | 'medium' | 'hard' | 'impossible'
 export type Theme = 'light' | 'dark'
 
 export interface Scores {

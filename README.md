@@ -5,7 +5,7 @@ A polished, fully client-side **3×3 tic-tac-toe** web app with local pass-and-p
 ## Features
 
 - **Local PvP** — pass-and-play on one device
-- **Vs computer** — easy (random), medium (tactics + heuristic), hard (minimax + alpha-beta, optimal on 3×3)
+- **Vs computer** — easy / medium / hard / **impossible** (minimax + alpha-beta, fork detection, opening book; optimal on 3×3)
 - **Session scores** — X / O / draws, persisted in `localStorage`
 - **Settings** — first player, play as X/O (vs AI), light/dark theme, sound on/off
 - **Undo** — one move in PvP; human+AI pair in vs computer
@@ -65,7 +65,7 @@ Fixed **length-9 array**, row-major: `index = row * 3 + col` (0 = top-left, 8 = 
 
 ### AI notes
 
-3×3 is small; **hard** uses full minimax with alpha-beta pruning. Optimal play vs optimal play always draws. Easy prioritizes randomness so humans can win; medium blocks/takes wins but slips ~25% of the time.
+3×3 is small; **hard** and **impossible** both play optimally via minimax + alpha-beta (optimal vs optimal always draws). **Hard** picks randomly among optimal moves for variety. **Impossible** uses deterministic fork/position tie-breaks plus an opening book (center / corner responses) so it always applies maximum pressure. Medium is tactical (wins/blocks/forks + priority cells, ~20% slip) without full search. Easy is mostly random but occasionally blocks/wins.
 
 ## Rules (quick)
 
