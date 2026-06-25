@@ -237,7 +237,7 @@ describe('draw ladder (next-game escalation)', () => {
     expect(r.state.ladderAdvanced).toBe(false)
   })
 
-  it('draw on 4×4 advances ladder but does not tier-up difficulty', () => {
+  it('draw on 4×4 advances ladder and tiers-up difficulty (pressure keeps climbing)', () => {
     let g = createGame({ boardSize: 4, settings: { mode: 'vs_ai', difficulty: 'medium' } })
     // Fill without 4-in-a-row if possible; use alternating pattern
     const board: ('X' | 'O' | null)[] = Array(16).fill(null)
@@ -258,7 +258,7 @@ describe('draw ladder (next-game escalation)', () => {
     if (outcome15.status === 'draw') {
       expect(r.state.status).toBe('draw')
       expect(r.state.ladderSize).toBe(5)
-      expect(r.state.settings.difficulty).toBe('medium')
+      expect(r.state.settings.difficulty).toBe('hard')
     } else {
       // Pattern might win for O — still valid board rules
       expect(['won', 'draw']).toContain(r.state.status)
