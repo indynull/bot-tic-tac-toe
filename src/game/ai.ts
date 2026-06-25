@@ -24,7 +24,7 @@ function maxSearchDepth(boardSize: BoardSize): number {
 }
 
 /** On large boards, hard/impossible fall back to tactical play (wins/blocks/forks/priority). */
-function useTacticalHard(boardSize: BoardSize): boolean {
+function prefersTacticalHard(boardSize: BoardSize): boolean {
   return boardSize >= 5
 }
 
@@ -216,7 +216,7 @@ function optimalMoves(board: Cell[], aiPlayer: Player, ctx: BoardContext): numbe
  * Among equally optimal lines on small boards, pick randomly for variety.
  */
 function chooseHardMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number {
-  if (useTacticalHard(ctx.boardSize)) {
+  if (prefersTacticalHard(ctx.boardSize)) {
     return chooseMediumMove(board, aiPlayer, ctx)
   }
   return randomChoice(optimalMoves(board, aiPlayer, ctx))
@@ -255,7 +255,7 @@ function openingBookMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): nu
  * On 4×4 uses shallow minimax with deterministic tie-breaks; on 5×5+ uses tactical play.
  */
 function chooseImpossibleMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number {
-  if (useTacticalHard(ctx.boardSize)) {
+  if (prefersTacticalHard(ctx.boardSize)) {
     // Deterministic tactical: prefer center/corners over random medium slips
     const moves = getEmptyCells(board)
     const human = opponent(aiPlayer)
