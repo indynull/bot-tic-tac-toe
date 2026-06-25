@@ -34,8 +34,11 @@ export function getStatusMessage(game: GameState, aiThinking: boolean): string {
     if (game.settings.mode === 'vs_ai') {
       const humanWon = game.winner === game.settings.humanPlayer
       if (humanWon) return `You win! (${game.winner})${stay}`
-      if (game.settings.difficulty === 'impossible' && game.boardSize <= 3) {
-        return `Computer wins — as expected. (${game.winner})`
+      if (game.settings.difficulty === 'impossible') {
+        return `Computer wins — as expected. (${game.winner})${stay}`
+      }
+      if (game.settings.difficulty === 'hard') {
+        return `Computer wins — hard mode doesn't miss. (${game.winner})${stay}`
       }
       return `Computer wins! (${game.winner})${stay}`
     }
@@ -45,7 +48,7 @@ export function getStatusMessage(game: GameState, aiThinking: boolean): string {
   if (game.status === 'draw') {
     if (game.ladderAdvanced && game.ladderSize > game.boardSize) {
       const tier =
-        game.settings.mode === 'vs_ai' && game.boardSize === 3
+        game.settings.mode === 'vs_ai'
           ? ` · AI now ${game.settings.difficulty}`
           : ''
       return `Draw — next game is ${game.ladderSize}×${game.ladderSize} (${winRuleLabel(game.ladderSize)})${tier}. Tap New game.`
@@ -61,8 +64,11 @@ export function getStatusMessage(game: GameState, aiThinking: boolean): string {
     return `${prefix}${game.currentPlayer}'s turn — pass the device`
   }
   if (game.currentPlayer === game.settings.humanPlayer) {
-    if (game.settings.difficulty === 'impossible' && game.boardSize <= 3) {
+    if (game.settings.difficulty === 'impossible') {
       return `${prefix}Your turn (${game.currentPlayer}) — play perfectly or lose`
+    }
+    if (game.settings.difficulty === 'hard') {
+      return `${prefix}Your turn (${game.currentPlayer}) — one mistake and it's over`
     }
     return `${prefix}Your turn (${game.currentPlayer})`
   }

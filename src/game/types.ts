@@ -112,11 +112,11 @@ export function winLengthForBoard(boardSize: BoardSize): number {
 }
 
 /**
- * Auto tier-up only when leaving classic 3×3 (real minimax tier).
- * Larger boards are shallow/tactical — keep the difficulty label as-is.
+ * After every draw that grows the ladder, bump difficulty one step (if not already max).
+ * Keeps pressure on as boards get larger and search becomes shallower.
  */
-export function shouldEscalateDifficulty(fromBoardSize: BoardSize): boolean {
-  return fromBoardSize === 3
+export function shouldEscalateDifficulty(_fromBoardSize: BoardSize): boolean {
+  return true
 }
 
 /** Short win-rule label, e.g. "3 in a row" / "4 in a row". */
@@ -134,19 +134,29 @@ export function aiPolicyNote(boardSize: BoardSize, difficulty: Difficulty): stri
     return 'Mostly random with occasional tactics'
   }
   if (boardSize === 4) {
-    if (difficulty === 'hard' || difficulty === 'impossible') {
-      return 'Shallow search on 4×4 (not full-tree optimal)'
-    }
+    if (difficulty === 'impossible') return 'Deep shallow search on 4×4 (depth 5; not full-tree optimal)'
+    if (difficulty === 'hard') return 'Shallow search on 4×4 (depth 4; not full-tree optimal)'
     return 'Tactical play on 4×4'
   }
-  return 'Tactical play on 5×5+ (fast; not optimal search)'
+  if (boardSize <= 6) {
+    if (difficulty === 'hard' || difficulty === 'impossible') {
+      return `Limited minimax on ${boardSize}×${boardSize} (tactical fallback only on 7×7)`
+    }
+    return `Tactical play on ${boardSize}×${boardSize}`
+  }
+  return 'Tactical play on 7×7 (fast; not optimal search)'
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   firstPlayer: 'X',
-  humanPlayer: 'X',
-  mode: 'local_pvp',
-  difficulty: 'medium',
+  /**
+   * Agrajag pass: human plays O so the computer opens as X on impossible.
+   * (Other passes already set vs_ai/impossible; this removes the human first-move edge.)
+   */
+  humanPlayer: 'O',
+  /** Fresh installs land in vs computer so the challenge is immediate. */
+  mode: 'vs_ai',
+  difficulty: 'impossible',
   theme: 'light',
   soundEnabled: false,
 }

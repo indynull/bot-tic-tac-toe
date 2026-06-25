@@ -13,19 +13,22 @@ interface BoardContext {
 }
 
 /**
- * Depth limit for minimax. 3×3 stays exhaustive; larger boards use shallow tactical
- * search so hard/impossible stay in the low-millisecond range (no multi-second hangs).
+ * Depth limit for minimax. 3×3 stays exhaustive; larger boards use shallow search
+ * with extra ply on 4×4 (impossible gets one more than hard). Still low-ms range.
+ * 5×6 run limited minimax; only 7×7 is pure tactical.
  */
-function maxSearchDepth(boardSize: BoardSize): number {
+function maxSearchDepth(boardSize: BoardSize, difficulty: Difficulty = 'hard'): number {
   if (boardSize <= 3) return 20
-  if (boardSize === 4) return 3
-  if (boardSize === 5) return 2
+  // Impossible earns an extra ply on 4×4/5×5; depths stay interactive on CI.
+  if (boardSize === 4) return difficulty === 'impossible' ? 5 : 4
+  if (boardSize === 5) return difficulty === 'impossible' ? 2 : 1
+  if (boardSize === 6) return 1
   return 1
 }
 
-/** On large boards, hard/impossible fall back to tactical play (wins/blocks/forks/priority). */
+/** Only 7×7 falls back to pure tactical; 4×6 run limited minimax (was tactical-only on 5+). */
 function prefersTacticalHard(boardSize: BoardSize): boolean {
-  return boardSize >= 5
+  return boardSize >= 7
 }
 
 /** Strategic cell weights for classic 3×3: center > corners > edges. */
@@ -188,11 +191,16 @@ function minimax(
 }
 
 /** Collect all minimax-optimal moves (same best score). */
-function optimalMoves(board: Cell[], aiPlayer: Player, ctx: BoardContext): number[] {
+function optimalMoves(
+  board: Cell[],
+  aiPlayer: Player,
+  ctx: BoardContext,
+  difficulty: Difficulty = 'hard',
+): number[] {
   const moves = getEmptyCells(board)
   if (moves.length === 0) throw new Error('No legal moves')
 
-  const maxDepth = maxSearchDepth(ctx.boardSize)
+  const maxDepth = maxSearchDepth(ctx.boardSize, difficulty)
   let bestScore = -Infinity
   const best: number[] = []
 
@@ -212,14 +220,15 @@ function optimalMoves(board: Cell[], aiPlayer: Player, ctx: BoardContext): numbe
 }
 
 /**
- * Hard: optimal minimax on 3×3/4×4; tactical (medium-class) on 5×5+ for speed.
+ * Hard: optimal minimax on 3×3; limited-depth minimax on 4×4–6×6; tactical on 7×7.
  * Among equally optimal lines on small boards, pick randomly for variety.
  */
 function chooseHardMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number {
   if (prefersTacticalHard(ctx.boardSize)) {
-    return chooseMediumMove(board, aiPlayer, ctx)
+    // No random slips on the tactical-only rung (Agrajag: discipline on 7×7).
+    return chooseMediumMove(board, aiPlayer, ctx, /*allowSlip*/ false)
   }
-  return randomChoice(optimalMoves(board, aiPlayer, ctx))
+  return randomChoice(optimalMoves(board, aiPlayer, ctx, 'hard'))
 }
 
 /**
@@ -252,7 +261,7 @@ function openingBookMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): nu
 
 /**
  * Impossible: optimal minimax + deterministic fork/position tie-breaks + opening book on 3×3.
- * On 4×4 uses shallow minimax with deterministic tie-breaks; on 5×5+ uses tactical play.
+ * On 4×4–6×6 uses limited minimax (extra ply on 4×4) with deterministic tie-breaks; on 7×7 tactical.
  */
 function chooseImpossibleMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number {
   if (prefersTacticalHard(ctx.boardSize)) {
@@ -278,11 +287,11 @@ function chooseImpossibleMove(board: Cell[], aiPlayer: Player, ctx: BoardContext
 
   const book = openingBookMove(board, aiPlayer, ctx)
   if (book !== null) {
-    const optimal = optimalMoves(board, aiPlayer, ctx)
+    const optimal = optimalMoves(board, aiPlayer, ctx, 'impossible')
     if (optimal.includes(book)) return book
   }
 
-  const optimal = optimalMoves(board, aiPlayer, ctx)
+  const optimal = optimalMoves(board, aiPlayer, ctx, 'impossible')
   let bestTie = -Infinity
   let bestMove = optimal[0]!
   for (const m of optimal) {
@@ -323,9 +332,15 @@ function priorityIndices(boardSize: BoardSize): number[] {
 
 /**
  * Medium: tactical play without full minimax. Always takes wins/blocks, creates/blocks
- * forks when obvious, otherwise uses cell priority with a ~20% random slip.
+ * forks when obvious, otherwise uses cell priority with a rare (~5%) random slip.
+ * Hard/impossible 7×7 fallbacks pass allowSlip=false (Agrajag: no gifts on the top rung).
  */
-function chooseMediumMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number {
+function chooseMediumMove(
+  board: Cell[],
+  aiPlayer: Player,
+  ctx: BoardContext,
+  allowSlip = true,
+): number {
   const moves = getEmptyCells(board)
   if (moves.length === 0) throw new Error('No legal moves')
   const human = opponent(aiPlayer)
@@ -345,32 +360,39 @@ function chooseMediumMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): n
   const forkBlocks = moves.filter((m) => createsFork(board, m, human, ctx))
   if (forkBlocks.length === 1) return forkBlocks[0]!
 
-  if (Math.random() < 0.2) {
+  if (allowSlip && Math.random() < 0.05) {
     return randomChoice(moves)
   }
 
   for (const p of priorityIndices(ctx.boardSize)) {
     if (moves.includes(p)) return p
   }
-  return randomChoice(moves)
+  return allowSlip ? randomChoice(moves) : (moves[0] ?? priorityIndices(ctx.boardSize)[0]!)
 }
 
 /**
- * Easy: mostly random, but occasionally plays a smart tactical move.
+ * Easy: still beatable, but always takes instant wins and often blocks — ~55% tactical.
  */
 function chooseEasyMove(board: Cell[], ctx: BoardContext, aiPlayer?: Player): number {
   const moves = getEmptyCells(board)
   if (moves.length === 0) throw new Error('No legal moves')
 
-  if (aiPlayer && Math.random() < 0.35) {
-    const human = opponent(aiPlayer)
+  // Never leave a free win on the table even on easy.
+  if (aiPlayer) {
     for (const m of moves) {
       if (evaluateBoard(setCell(board, m, aiPlayer), ctx.boardSize, ctx.winLength).winner === aiPlayer) return m
     }
+  }
+
+  if (aiPlayer && Math.random() < 0.55) {
+    const human = opponent(aiPlayer)
     for (const m of moves) {
       if (evaluateBoard(setCell(board, m, human), ctx.boardSize, ctx.winLength).winner === human) return m
     }
-  } else if (Math.random() < 0.2) {
+    for (const m of moves) {
+      if (createsFork(board, m, aiPlayer, ctx)) return m
+    }
+  } else if (Math.random() < 0.3) {
     for (const player of ['X', 'O'] as Player[]) {
       for (const m of moves) {
         if (evaluateBoard(setCell(board, m, player), ctx.boardSize, ctx.winLength).winner === player) return m

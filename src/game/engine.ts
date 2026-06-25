@@ -87,7 +87,7 @@ export function createGame(options: CreateGameOptions = {}): GameState {
 
 /**
  * After a full-board draw: advance ladder for the next empty game (if room),
- * optionally bump vs-AI difficulty when leaving 3×3.
+ * optionally bump vs-AI difficulty one tier (any board size that still climbs).
  */
 function applyDrawLadder(state: GameState): Pick<GameState, 'ladderSize' | 'ladderAdvanced' | 'settings'> {
   if (state.boardSize >= MAX_BOARD_SIZE) {
