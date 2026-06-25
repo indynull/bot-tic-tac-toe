@@ -18,8 +18,25 @@ import {
   type Theme,
 } from '../game'
 
-/** Thinking delay scales with difficulty — hard/impossible feels deliberate & unnerving. */
-function aiDelayMs(difficulty: Difficulty): number {
+/**
+ * Artificial thinking delay. On boards > 3×3 keep delays tiny so growth feels instant
+ * (search is already tactical/shallow on large boards).
+ */
+function aiDelayMs(difficulty: Difficulty, boardSize: number): number {
+  if (boardSize > 3) {
+    switch (difficulty) {
+      case 'easy':
+        return 40
+      case 'medium':
+        return 60
+      case 'hard':
+        return 80
+      case 'impossible':
+        return 100
+      default:
+        return 60
+    }
+  }
   switch (difficulty) {
     case 'easy':
       return 280
@@ -28,7 +45,6 @@ function aiDelayMs(difficulty: Difficulty): number {
     case 'hard':
       return 700
     case 'impossible':
-      // Variable "calculating..." pause — keeps the human on edge
       return 850 + Math.floor(Math.random() * 650)
     default:
       return 700
@@ -98,7 +114,7 @@ export function useGameController() {
       } finally {
         setAiThinking(false)
       }
-    }, aiDelayMs(state.settings.difficulty))
+    }, aiDelayMs(state.settings.difficulty, state.boardSize))
   }, [clearAiTimer])
 
   // Trigger AI when it's their turn

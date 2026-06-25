@@ -12,12 +12,20 @@ interface BoardContext {
   winLength: number
 }
 
-/** Depth limit for minimax on larger boards (3×3 stays exhaustive). */
+/**
+ * Depth limit for minimax. 3×3 stays exhaustive; larger boards use shallow tactical
+ * search so hard/impossible stay in the low-millisecond range (no multi-second hangs).
+ */
 function maxSearchDepth(boardSize: BoardSize): number {
   if (boardSize <= 3) return 20
-  if (boardSize === 4) return 6
-  if (boardSize === 5) return 4
-  return 3
+  if (boardSize === 4) return 3
+  if (boardSize === 5) return 2
+  return 1
+}
+
+/** On large boards, hard/impossible fall back to tactical play (wins/blocks/forks/priority). */
+function useTacticalHard(boardSize: BoardSize): boolean {
+  return boardSize >= 5
 }
 
 /** Strategic cell weights for classic 3×3: center > corners > edges. */
@@ -204,10 +212,13 @@ function optimalMoves(board: Cell[], aiPlayer: Player, ctx: BoardContext): numbe
 }
 
 /**
- * Hard: optimal minimax play. Among equally optimal lines, pick randomly so games
- * vary while remaining unbeatable with perfect opponent play (on 3×3).
+ * Hard: optimal minimax on 3×3/4×4; tactical (medium-class) on 5×5+ for speed.
+ * Among equally optimal lines on small boards, pick randomly for variety.
  */
 function chooseHardMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number {
+  if (useTacticalHard(ctx.boardSize)) {
+    return chooseMediumMove(board, aiPlayer, ctx)
+  }
   return randomChoice(optimalMoves(board, aiPlayer, ctx))
 }
 
@@ -240,9 +251,31 @@ function openingBookMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): nu
 }
 
 /**
- * Impossible: optimal minimax + deterministic fork/position tie-breaks + opening book.
+ * Impossible: optimal minimax + deterministic fork/position tie-breaks + opening book on 3×3.
+ * On 4×4 uses shallow minimax with deterministic tie-breaks; on 5×5+ uses tactical play.
  */
 function chooseImpossibleMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number {
+  if (useTacticalHard(ctx.boardSize)) {
+    // Deterministic tactical: prefer center/corners over random medium slips
+    const moves = getEmptyCells(board)
+    const human = opponent(aiPlayer)
+    for (const m of moves) {
+      if (evaluateBoard(setCell(board, m, aiPlayer), ctx.boardSize, ctx.winLength).winner === aiPlayer) return m
+    }
+    for (const m of moves) {
+      if (evaluateBoard(setCell(board, m, human), ctx.boardSize, ctx.winLength).winner === human) return m
+    }
+    for (const m of moves) {
+      if (createsFork(board, m, aiPlayer, ctx)) return m
+    }
+    const forkBlocks = moves.filter((m) => createsFork(board, m, human, ctx))
+    if (forkBlocks.length === 1) return forkBlocks[0]!
+    for (const p of priorityIndices(ctx.boardSize)) {
+      if (moves.includes(p)) return p
+    }
+    return moves[0]!
+  }
+
   const book = openingBookMove(board, aiPlayer, ctx)
   if (book !== null) {
     const optimal = optimalMoves(board, aiPlayer, ctx)

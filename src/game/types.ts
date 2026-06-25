@@ -51,8 +51,8 @@ export interface GameState {
   scores: Scores
   settings: Settings
   /**
-   * After a draw, the next new game escalates board size + difficulty.
-   * Cleared when a new game starts (escalated or not).
+   * True only when a real draw was recorded at max board size (no further growth).
+   * Kept for status copy / persistence compatibility; in-place growth clears it.
    */
   pendingEscalation: boolean
 }
