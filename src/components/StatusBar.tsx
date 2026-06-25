@@ -31,29 +31,19 @@ export function getStatusMessage(game: GameState, aiThinking: boolean): string {
     return `${game.winner} wins!`
   }
   if (game.status === 'draw') {
-    if (game.settings.mode === 'vs_ai' && game.settings.difficulty === 'impossible') {
-      if (game.pendingEscalation && game.boardSize < 7) {
-        return `Draw — best possible outcome vs impossible AI (next: ${game.boardSize + 1}×${game.boardSize + 1})`
+    if (game.boardSize >= 7) {
+      if (game.settings.mode === 'vs_ai' && game.settings.difficulty === 'impossible') {
+        return "Draw — best possible outcome vs impossible AI (max board reached)"
       }
-      return "Draw — best possible outcome vs impossible AI"
-    }
-    if (game.pendingEscalation && game.boardSize < 7) {
-      const next = game.boardSize + 1
-      if (game.settings.mode === 'vs_ai' && game.boardSize <= 4) {
-        return `It's a draw — New game → ${next}×${next} (AI tier up)`
-      }
-      if (game.settings.mode === 'vs_ai') {
-        return `It's a draw — New game → ${next}×${next} (same AI tier; depth-limited on large boards)`
-      }
-      return `It's a draw — New game → ${next}×${next}`
-    }
-    if (game.pendingEscalation && game.boardSize >= 7) {
       return "It's a draw — max board size reached"
+    }
+    if (game.settings.mode === 'vs_ai' && game.settings.difficulty === 'impossible') {
+      return "Draw — best possible outcome vs impossible AI"
     }
     return "It's a draw"
   }
   if (game.boardSize > 3) {
-    const prefix = `${game.boardSize}×${game.boardSize} · ${game.winLength} in a row · `
+    const prefix = `${game.boardSize}×${game.boardSize} · ${game.winLength} in a row · board grew in place · `
     if (game.settings.mode === 'local_pvp') {
       return `${prefix}${game.currentPlayer}'s turn — pass the device`
     }
