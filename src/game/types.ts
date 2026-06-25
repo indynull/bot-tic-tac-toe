@@ -65,8 +65,8 @@ export const DEFAULT_SCORES: Scores = { X: 0, O: 0, draws: 0 }
 export const DEFAULT_SETTINGS: Settings = {
   firstPlayer: 'X',
   humanPlayer: 'X',
-  mode: 'vs_ai',
-  difficulty: 'hard',
+  mode: 'local_pvp',
+  difficulty: 'medium',
   theme: 'light',
   soundEnabled: false,
 }

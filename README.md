@@ -65,7 +65,7 @@ Fixed **length-9 array**, row-major: `index = row * 3 + col` (0 = top-left, 8 = 
 
 ### AI notes
 
-3×3 is small; **hard** and **impossible** use full minimax with alpha-beta pruning, move ordering, and fork-aware tie-breaks. Impossible adds an opening book (center / corner responses). Optimal play vs optimal play always draws — you cannot beat hard/impossible without the AI making a mistake (it won't). Medium is near-optimal with only an ~8% slip; easy is mostly random but occasionally blocks/wins.
+3×3 is small; **hard** and **impossible** both play optimally via minimax + alpha-beta (optimal vs optimal always draws). **Hard** picks randomly among optimal moves for variety. **Impossible** uses deterministic fork/position tie-breaks plus an opening book (center / corner responses) so it always applies maximum pressure. Medium is tactical (wins/blocks/forks + priority cells, ~20% slip) without full search. Easy is mostly random but occasionally blocks/wins.
 
 ## Rules (quick)
 
