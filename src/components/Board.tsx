@@ -1,31 +1,43 @@
-import type { Cell, Player } from '../game'
+import type { BoardSize, Cell, Player } from '../game'
 import { indexToRowCol } from '../game'
 import styles from '../styles/Board.module.css'
 
 interface BoardProps {
   board: Cell[]
+  boardSize: BoardSize
   winningLine: number[] | null
   status: 'in_progress' | 'won' | 'draw'
   disabled: boolean
   onCellClick: (index: number) => void
 }
 
-function cellLabel(index: number, value: Cell): string {
-  const { row, col } = indexToRowCol(index)
+function cellLabel(index: number, value: Cell, boardSize: BoardSize): string {
+  const { row, col } = indexToRowCol(index, boardSize)
   const pos = `Row ${row + 1}, column ${col + 1}`
   if (value === null) return `${pos}, empty`
   return `${pos}, ${value}`
 }
 
-export function Board({ board, winningLine, status, disabled, onCellClick }: BoardProps) {
+export function Board({ board, boardSize, winningLine, status, disabled, onCellClick }: BoardProps) {
   const winSet = new Set(winningLine ?? [])
   const isDraw = status === 'draw'
+  const sizeClass =
+    boardSize === 3
+      ? styles.size3
+      : boardSize === 4
+        ? styles.size4
+        : boardSize === 5
+          ? styles.size5
+          : boardSize === 6
+            ? styles.size6
+            : styles.size7
 
   return (
     <div
-      className={`${styles.board} ${isDraw ? styles.drawBoard : ''}`}
+      className={`${styles.board} ${sizeClass} ${isDraw ? styles.drawBoard : ''}`}
       role="grid"
-      aria-label="Tic-tac-toe board"
+      aria-label={`Tic-tac-toe board ${boardSize} by ${boardSize}`}
+      style={{ ['--board-n' as string]: boardSize }}
     >
       {board.map((cell, index) => {
         const isWin = winSet.has(index)
@@ -45,7 +57,7 @@ export function Board({ board, winningLine, status, disabled, onCellClick }: Boa
             ]
               .filter(Boolean)
               .join(' ')}
-            aria-label={cellLabel(index, cell)}
+            aria-label={cellLabel(index, cell, boardSize)}
             aria-disabled={!canPlay}
             disabled={!canPlay}
             onClick={() => canPlay && onCellClick(index)}

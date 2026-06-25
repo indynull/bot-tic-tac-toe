@@ -1,75 +1,138 @@
-import { evaluateBoard, getEmptyCells, opponent, setCell } from './board'
-import type { Cell, Difficulty, GameState, Player } from './types'
-import { WIN_LINES } from './types'
+import { evaluateBoard, getEmptyCells, indexToRowCol, opponent, setCell } from './board'
+import type { BoardSize, Cell, Difficulty, GameState, Player } from './types'
+import { DEFAULT_BOARD_SIZE, WIN_LINES } from './types'
 import { getAiPlayer, getLegalMoves as stateLegalMoves } from './engine'
 
 function randomChoice<T>(items: T[]): T {
   return items[Math.floor(Math.random() * items.length)]!
 }
 
-/** Strategic cell weights: center > corners > edges (classic optimal opening theory). */
-const POSITION_WEIGHT: readonly number[] = [3, 1, 3, 1, 5, 1, 3, 1, 3]
+interface BoardContext {
+  boardSize: BoardSize
+  winLength: number
+}
+
+/** Depth limit for minimax on larger boards (3×3 stays exhaustive). */
+function maxSearchDepth(boardSize: BoardSize): number {
+  if (boardSize <= 3) return 20
+  if (boardSize === 4) return 6
+  if (boardSize === 5) return 4
+  return 3
+}
+
+/** Strategic cell weights for classic 3×3: center > corners > edges. */
+const POSITION_WEIGHT_3: readonly number[] = [3, 1, 3, 1, 5, 1, 3, 1, 3]
+
+function positionWeight(move: number, boardSize: BoardSize): number {
+  if (boardSize === 3 && move < POSITION_WEIGHT_3.length) {
+    return POSITION_WEIGHT_3[move]!
+  }
+  const { row, col } = indexToRowCol(move, boardSize)
+  const center = (boardSize - 1) / 2
+  const dist = Math.abs(row - center) + Math.abs(col - center)
+  return Math.max(0, boardSize - dist)
+}
 
 /**
  * Count how many ways `player` can complete a line on the next turn from `board`.
  * Used to detect and create forks (two simultaneous threats = guaranteed win).
  */
-function countImmediateThreats(board: Cell[], player: Player): number {
+function countImmediateThreats(board: Cell[], player: Player, ctx: BoardContext): number {
   let threats = 0
-  for (const line of WIN_LINES) {
-    let mine = 0
-    let empty = 0
-    for (const idx of line) {
-      const cell = board[idx]
-      if (cell === player) mine++
-      else if (cell === null) empty++
+  if (ctx.boardSize === 3 && ctx.winLength === 3) {
+    for (const line of WIN_LINES) {
+      let mine = 0
+      let empty = 0
+      for (const idx of line) {
+        const cell = board[idx]
+        if (cell === player) mine++
+        else if (cell === null) empty++
+      }
+      if (mine === 2 && empty === 1) threats++
     }
-    if (mine === 2 && empty === 1) threats++
+    return threats
+  }
+  // General N×N: scan all potential winning segments
+  const k = ctx.winLength
+  const dirs: [number, number][] = [
+    [0, 1],
+    [1, 0],
+    [1, 1],
+    [1, -1],
+  ]
+  for (let row = 0; row < ctx.boardSize; row++) {
+    for (let col = 0; col < ctx.boardSize; col++) {
+      for (const [dr, dc] of dirs) {
+        const endR = row + dr * (k - 1)
+        const endC = col + dc * (k - 1)
+        if (endR < 0 || endC < 0 || endR >= ctx.boardSize || endC >= ctx.boardSize) continue
+        let mine = 0
+        let empty = 0
+        let r = row
+        let c = col
+        for (let i = 0; i < k; i++) {
+          const idx = r * ctx.boardSize + c
+          const cell = board[idx]
+          if (cell === player) mine++
+          else if (cell === null) empty++
+          r += dr
+          c += dc
+        }
+        if (mine === k - 1 && empty === 1) threats++
+      }
+    }
   }
   return threats
 }
 
 /** Does placing `player` at `move` on `board` create a fork (2+ threats)? */
-function createsFork(board: Cell[], move: number, player: Player): boolean {
-  return countImmediateThreats(setCell(board, move, player), player) >= 2
+function createsFork(board: Cell[], move: number, player: Player, ctx: BoardContext): boolean {
+  return countImmediateThreats(setCell(board, move, player), player, ctx) >= 2
 }
 
 /**
  * Quiet-position heuristic for move ordering / tie-breaking among equal minimax scores.
- * Prefers: instant wins > blocks > forks > center > corners > edges.
- * Large tactical bonuses (+100/+50/…) are only safe because this is never used as a
- * minimax leaf score — only to rank moves that already share the same minimax value.
- * Position weights are micro (×0.001) so they only decide among otherwise-equal tactics.
  */
-function positionHeuristic(board: Cell[], move: number, aiPlayer: Player): number {
+function positionHeuristic(board: Cell[], move: number, aiPlayer: Player, ctx: BoardContext): number {
   const human = opponent(aiPlayer)
   const afterAi = setCell(board, move, aiPlayer)
-  let h = POSITION_WEIGHT[move]! * 0.001
+  let h = positionWeight(move, ctx.boardSize) * 0.001
 
-  if (evaluateBoard(afterAi).winner === aiPlayer) h += 100
-  if (evaluateBoard(setCell(board, move, human)).winner === human) h += 50
-  if (countImmediateThreats(afterAi, aiPlayer) >= 2) h += 25
-  // Deny opponent fork setups by taking the forking square ourselves
-  if (createsFork(board, move, human)) h += 20
+  if (evaluateBoard(afterAi, ctx.boardSize, ctx.winLength).winner === aiPlayer) h += 100
+  if (evaluateBoard(setCell(board, move, human), ctx.boardSize, ctx.winLength).winner === human) h += 50
+  if (countImmediateThreats(afterAi, aiPlayer, ctx) >= 2) h += 25
+  if (createsFork(board, move, human, ctx)) h += 20
 
   return h
 }
 
 /** Order moves for better alpha-beta pruning (try strong cells first). */
-function orderedMoves(board: Cell[], player: Player): number[] {
+function orderedMoves(board: Cell[], player: Player, ctx: BoardContext): number[] {
   const moves = getEmptyCells(board)
   return moves.sort((a, b) => {
-    const ha = positionHeuristic(board, a, player)
-    const hb = positionHeuristic(board, b, player)
+    const ha = positionHeuristic(board, a, player, ctx)
+    const hb = positionHeuristic(board, b, player, ctx)
     return hb - ha
   })
 }
 
+function heuristicScore(board: Cell[], ctx: BoardContext, maximizingPlayer: Player): number {
+  let score = 0
+  const center = (ctx.boardSize - 1) / 2
+  for (let i = 0; i < board.length; i++) {
+    const cell = board[i]
+    if (cell === null) continue
+    const { row, col } = indexToRowCol(i, ctx.boardSize)
+    const dist = Math.abs(row - center) + Math.abs(col - center)
+    const weight = Math.max(0, ctx.boardSize - dist)
+    score += cell === maximizingPlayer ? weight : -weight
+  }
+  return score
+}
+
 /**
- * Full minimax with depth preference (faster wins / slower losses).
- * Score from `maximizingPlayer` perspective: ~1000 win, ~-1000 loss, 0 draw,
- * with ±10 per ply so quicker wins / slower losses rank higher.
- * Move ordering is an optimization only (correctness does not depend on it on 3×3).
+ * Minimax with depth preference (faster wins / slower losses).
+ * Score from `maximizingPlayer` perspective: ~1000 win, ~-1000 loss, 0 draw.
  */
 function minimax(
   board: Cell[],
@@ -78,22 +141,26 @@ function minimax(
   depth: number,
   alpha: number,
   beta: number,
+  ctx: BoardContext,
+  maxDepth: number,
 ): number {
-  const outcome = evaluateBoard(board)
+  const outcome = evaluateBoard(board, ctx.boardSize, ctx.winLength)
   if (outcome.status === 'won') {
-    // Stronger depth bias: win ASAP, delay losses as long as possible
     return outcome.winner === maximizingPlayer ? 1000 - depth * 10 : depth * 10 - 1000
   }
   if (outcome.status === 'draw') return 0
+  if (depth >= maxDepth) {
+    return heuristicScore(board, ctx, maximizingPlayer) * 0.01
+  }
 
-  const moves = orderedMoves(board, current)
+  const moves = orderedMoves(board, current, ctx)
   const isMax = current === maximizingPlayer
 
   if (isMax) {
     let best = -Infinity
     for (const m of moves) {
       const next = setCell(board, m, current)
-      const score = minimax(next, opponent(current), maximizingPlayer, depth + 1, alpha, beta)
+      const score = minimax(next, opponent(current), maximizingPlayer, depth + 1, alpha, beta, ctx, maxDepth)
       best = Math.max(best, score)
       alpha = Math.max(alpha, best)
       if (beta <= alpha) break
@@ -104,7 +171,7 @@ function minimax(
   let best = Infinity
   for (const m of moves) {
     const next = setCell(board, m, current)
-    const score = minimax(next, opponent(current), maximizingPlayer, depth + 1, alpha, beta)
+    const score = minimax(next, opponent(current), maximizingPlayer, depth + 1, alpha, beta, ctx, maxDepth)
     best = Math.min(best, score)
     beta = Math.min(beta, best)
     if (beta <= alpha) break
@@ -112,19 +179,18 @@ function minimax(
   return best
 }
 
-/**
- * Collect all minimax-optimal moves (same best score). On 3×3 this set is usually small.
- */
-function optimalMoves(board: Cell[], aiPlayer: Player): number[] {
+/** Collect all minimax-optimal moves (same best score). */
+function optimalMoves(board: Cell[], aiPlayer: Player, ctx: BoardContext): number[] {
   const moves = getEmptyCells(board)
   if (moves.length === 0) throw new Error('No legal moves')
 
+  const maxDepth = maxSearchDepth(ctx.boardSize)
   let bestScore = -Infinity
   const best: number[] = []
 
   for (const m of moves) {
     const next = setCell(board, m, aiPlayer)
-    const score = minimax(next, opponent(aiPlayer), aiPlayer, 0, -Infinity, Infinity)
+    const score = minimax(next, opponent(aiPlayer), aiPlayer, 0, -Infinity, Infinity, ctx, maxDepth)
     if (score > bestScore) {
       bestScore = score
       best.length = 0
@@ -139,57 +205,29 @@ function optimalMoves(board: Cell[], aiPlayer: Player): number[] {
 
 /**
  * Hard: optimal minimax play. Among equally optimal lines, pick randomly so games
- * vary while remaining unbeatable with perfect opponent play.
+ * vary while remaining unbeatable with perfect opponent play (on 3×3).
  */
-function chooseHardMove(board: Cell[], aiPlayer: Player): number {
-  return randomChoice(optimalMoves(board, aiPlayer))
+function chooseHardMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number {
+  return randomChoice(optimalMoves(board, aiPlayer, ctx))
 }
 
 /**
- * Impossible: optimal minimax + deterministic fork/position tie-breaks + opening book.
- * Always optimal; among draws, maximizes opponent pressure (no random variety).
+ * Opening book for 3×3: center first; respond to center with corner.
  */
-function chooseImpossibleMove(board: Cell[], aiPlayer: Player): number {
-  const book = openingBookMove(board, aiPlayer)
-  if (book !== null) {
-    const optimal = optimalMoves(board, aiPlayer)
-    if (optimal.includes(book)) return book
-  }
-
-  const optimal = optimalMoves(board, aiPlayer)
-  let bestTie = -Infinity
-  let bestMove = optimal[0]!
-  for (const m of optimal) {
-    const tie = positionHeuristic(board, m, aiPlayer)
-    if (tie > bestTie) {
-      bestTie = tie
-      bestMove = m
-    }
-  }
-  return bestMove
-}
-
-/**
- * Opening book: on an empty board, always take center (strongest first move).
- * If center is taken, answer with a corner — denies early fork setups.
- */
-function openingBookMove(board: Cell[], aiPlayer: Player): number | null {
+function openingBookMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number | null {
+  if (ctx.boardSize !== 3) return null
   const empties = getEmptyCells(board)
   const filled = 9 - empties.length
 
-  if (filled === 0) return 4 // center
+  if (filled === 0) return 4
 
   if (filled === 1) {
-    // Human opened; respond optimally
     if (board[4] === null) return 4
-    // Human took center → take a corner (prefer 0 for consistency)
     const corners = [0, 2, 6, 8].filter((i) => board[i] === null)
     if (corners.length > 0) return corners[0]!
   }
 
   if (filled === 2 && board[4] === aiPlayer) {
-    // We opened center; if human played edge, take opposite-side corner pair logic via minimax
-    // If human played corner, take opposite corner to set up
     const human = opponent(aiPlayer)
     const oppCorners: Record<number, number> = { 0: 8, 2: 6, 6: 2, 8: 0 }
     for (const [corner, opposite] of Object.entries(oppCorners)) {
@@ -202,69 +240,115 @@ function openingBookMove(board: Cell[], aiPlayer: Player): number | null {
 }
 
 /**
- * Medium: tactical play without full minimax. Always takes wins/blocks, creates/blocks
- * forks when obvious, otherwise uses a fixed cell priority with a ~20% random slip so
- * it stays beatable and clearly weaker than hard/impossible.
+ * Impossible: optimal minimax + deterministic fork/position tie-breaks + opening book.
  */
-function chooseMediumMove(board: Cell[], aiPlayer: Player): number {
+function chooseImpossibleMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number {
+  const book = openingBookMove(board, aiPlayer, ctx)
+  if (book !== null) {
+    const optimal = optimalMoves(board, aiPlayer, ctx)
+    if (optimal.includes(book)) return book
+  }
+
+  const optimal = optimalMoves(board, aiPlayer, ctx)
+  let bestTie = -Infinity
+  let bestMove = optimal[0]!
+  for (const m of optimal) {
+    const tie = positionHeuristic(board, m, aiPlayer, ctx)
+    if (tie > bestTie) {
+      bestTie = tie
+      bestMove = m
+    }
+  }
+  return bestMove
+}
+
+/** Cell priority: center first, then corners/edges — works for any N×N. */
+function priorityIndices(boardSize: BoardSize): number[] {
+  const center = Math.floor(boardSize / 2)
+  const indices: number[] = []
+  const seen = new Set<number>()
+  const push = (r: number, c: number) => {
+    if (r < 0 || c < 0 || r >= boardSize || c >= boardSize) return
+    const i = r * boardSize + c
+    if (!seen.has(i)) {
+      seen.add(i)
+      indices.push(i)
+    }
+  }
+  push(center, center)
+  push(0, 0)
+  push(0, boardSize - 1)
+  push(boardSize - 1, 0)
+  push(boardSize - 1, boardSize - 1)
+  for (let r = 0; r < boardSize; r++) {
+    for (let c = 0; c < boardSize; c++) {
+      push(r, c)
+    }
+  }
+  return indices
+}
+
+/**
+ * Medium: tactical play without full minimax. Always takes wins/blocks, creates/blocks
+ * forks when obvious, otherwise uses cell priority with a ~20% random slip.
+ */
+function chooseMediumMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number {
   const moves = getEmptyCells(board)
   if (moves.length === 0) throw new Error('No legal moves')
   const human = opponent(aiPlayer)
 
-  // Always finish if we can win now
   for (const m of moves) {
-    if (evaluateBoard(setCell(board, m, aiPlayer)).winner === aiPlayer) return m
+    if (evaluateBoard(setCell(board, m, aiPlayer), ctx.boardSize, ctx.winLength).winner === aiPlayer) return m
   }
 
-  // Always block opponent's immediate win
   for (const m of moves) {
-    if (evaluateBoard(setCell(board, m, human)).winner === human) return m
+    if (evaluateBoard(setCell(board, m, human), ctx.boardSize, ctx.winLength).winner === human) return m
   }
 
-  // Create a fork when possible
   for (const m of moves) {
-    if (createsFork(board, m, aiPlayer)) return m
+    if (createsFork(board, m, aiPlayer, ctx)) return m
   }
 
-  // Block opponent fork (single threat only — multi-fork needs search; medium slips here)
-  const forkBlocks = moves.filter((m) => createsFork(board, m, human))
+  const forkBlocks = moves.filter((m) => createsFork(board, m, human, ctx))
   if (forkBlocks.length === 1) return forkBlocks[0]!
 
   if (Math.random() < 0.2) {
     return randomChoice(moves)
   }
 
-  const priority = [4, 0, 2, 6, 8, 1, 3, 5, 7]
-  for (const p of priority) {
+  for (const p of priorityIndices(ctx.boardSize)) {
     if (moves.includes(p)) return p
   }
   return randomChoice(moves)
 }
 
 /**
- * Easy: still mostly random, but occasionally plays a smart tactical move
- * so it doesn't feel completely brain-dead — and blocks/wins ~35% of the time.
+ * Easy: mostly random, but occasionally plays a smart tactical move.
  */
-function chooseEasyMove(board: Cell[], aiPlayer?: Player): number {
+function chooseEasyMove(board: Cell[], ctx: BoardContext, aiPlayer?: Player): number {
   const moves = getEmptyCells(board)
   if (moves.length === 0) throw new Error('No legal moves')
 
   if (aiPlayer && Math.random() < 0.35) {
     const human = opponent(aiPlayer)
     for (const m of moves) {
-      if (evaluateBoard(setCell(board, m, aiPlayer)).winner === aiPlayer) return m
+      if (evaluateBoard(setCell(board, m, aiPlayer), ctx.boardSize, ctx.winLength).winner === aiPlayer) return m
     }
     for (const m of moves) {
-      if (evaluateBoard(setCell(board, m, human)).winner === human) return m
+      if (evaluateBoard(setCell(board, m, human), ctx.boardSize, ctx.winLength).winner === human) return m
     }
   } else if (Math.random() < 0.2) {
     for (const player of ['X', 'O'] as Player[]) {
       for (const m of moves) {
-        if (evaluateBoard(setCell(board, m, player)).winner === player) return m
+        if (evaluateBoard(setCell(board, m, player), ctx.boardSize, ctx.winLength).winner === player) return m
       }
     }
   }
   return randomChoice(moves)
+}
+
+function ctxFromState(state: GameState): BoardContext {
+  return { boardSize: state.boardSize, winLength: state.winLength }
 }
 
 /**
@@ -280,28 +364,32 @@ export function chooseMove(state: GameState, difficulty?: Difficulty): number {
 
   const aiPlayer = getAiPlayer(state)
   const board = state.board
+  const ctx = ctxFromState(state)
 
   switch (diff) {
     case 'easy':
-      return chooseEasyMove(board, aiPlayer)
+      return chooseEasyMove(board, ctx, aiPlayer)
     case 'medium':
-      return chooseMediumMove(board, aiPlayer)
+      return chooseMediumMove(board, aiPlayer, ctx)
     case 'hard':
-      return chooseHardMove(board, aiPlayer)
+      return chooseHardMove(board, aiPlayer, ctx)
     case 'impossible':
-      return chooseImpossibleMove(board, aiPlayer)
+      return chooseImpossibleMove(board, aiPlayer, ctx)
     default:
-      // Conservative runtime fallback if an unexpected value sneaks in (e.g. bad storage).
-      return chooseEasyMove(board, aiPlayer)
+      return chooseEasyMove(board, ctx, aiPlayer)
   }
 }
 
-/** Exported for tests: optimal move on a raw board. */
-export function chooseHardMoveForBoard(board: Cell[], aiPlayer: Player): number {
-  return chooseHardMove(board, aiPlayer)
+/** Exported for tests: optimal move on a raw 3×3 board. */
+export function chooseHardMoveForBoard(
+  board: Cell[],
+  aiPlayer: Player,
+  boardSize: BoardSize = DEFAULT_BOARD_SIZE,
+): number {
+  return chooseHardMove(board, aiPlayer, { boardSize, winLength: boardSize })
 }
 
 /** Exported for tests: impossible-tier move on a raw board. */
 export function chooseImpossibleMoveForBoard(board: Cell[], aiPlayer: Player): number {
-  return chooseImpossibleMove(board, aiPlayer)
+  return chooseImpossibleMove(board, aiPlayer, { boardSize: DEFAULT_BOARD_SIZE, winLength: DEFAULT_BOARD_SIZE })
 }
