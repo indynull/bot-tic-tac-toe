@@ -83,6 +83,42 @@ describe('impossible AI', () => {
   })
 })
 
+describe('larger boards', () => {
+  it('hard AI returns a legal move on 4×4', () => {
+    let g = createGame({
+      boardSize: 4,
+      settings: { mode: 'vs_ai', humanPlayer: 'X', difficulty: 'hard' },
+    })
+    const r = applyMove(g, 0)
+    if (!r.ok) throw new Error('setup failed')
+    g = r.state
+    const legal = getLegalMoves(g)
+    const move = chooseMove(g, 'hard')
+    expect(legal).toContain(move)
+  })
+
+  it('medium takes an instant win on 4×4', () => {
+    // X has three in a row on top needing one more at index 3; it's X's turn via medium as AI
+    let g = createGame({
+      boardSize: 4,
+      settings: { mode: 'vs_ai', humanPlayer: 'O', difficulty: 'medium', firstPlayer: 'X' },
+    })
+    // Manually set board: X X X _ on row 0, rest empty, X to play
+    g = {
+      ...g,
+      board: [
+        'X', 'X', 'X', null,
+        null, null, null, null,
+        null, null, null, null,
+        null, null, null, null,
+      ],
+      currentPlayer: 'X',
+    }
+    const move = chooseMove(g, 'medium')
+    expect(move).toBe(3)
+  })
+})
+
 describe('fork tactics (medium)', () => {
   it('creates a fork when available', () => {
     // Classic: O at 4, X at 0 & 8, O to move — O can fork at 2 or 6 (threatens two lines)

@@ -24,6 +24,24 @@ describe('storage helpers', () => {
     expect(deserializePersisted('not-json{{{')).toBeNull()
   })
 
+  it('round-trips progression state', () => {
+    const progression = { boardSize: 5 as const, pendingEscalation: true }
+    const raw = serializePersisted(DEFAULT_SCORES, DEFAULT_SETTINGS, progression)
+    const data = deserializePersisted(raw)
+    expect(data?.progression).toEqual(progression)
+  })
+
+  it('migrates v1 payloads without progression', () => {
+    const v1 = JSON.stringify({
+      version: 1,
+      scores: DEFAULT_SCORES,
+      settings: DEFAULT_SETTINGS,
+    })
+    const data = deserializePersisted(v1)
+    expect(data).not.toBeNull()
+    expect(data?.progression).toEqual({ boardSize: 3, pendingEscalation: false })
+  })
+
   it('returns null for wrong version', () => {
     const bad = JSON.stringify({
       version: 999,
