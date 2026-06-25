@@ -97,7 +97,7 @@ describe('larger boards', () => {
     expect(legal).toContain(move)
   })
 
-  it('hard/impossible on 5×5+ return quickly (tactical, not deep minimax)', () => {
+  it('hard/impossible on 5×5 return quickly (limited minimax, not full tree)', () => {
     let g = createGame({
       boardSize: 5,
       settings: { mode: 'vs_ai', humanPlayer: 'X', difficulty: 'impossible' },
@@ -109,8 +109,8 @@ describe('larger boards', () => {
     const move = chooseMove(g, 'impossible')
     const elapsed = performance.now() - t0
     expect(getLegalMoves(g)).toContain(move)
-    // Must stay in low-millisecond range (allow CI slack)
-    expect(elapsed).toBeLessThan(200)
+    // Limited minimax on 5×5 is slower than pure tactical but must stay interactive
+    expect(elapsed).toBeLessThan(500)
   })
 
   it('hard on 6×6 completes in milliseconds', () => {

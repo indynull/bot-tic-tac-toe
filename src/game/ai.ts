@@ -13,19 +13,20 @@ interface BoardContext {
 }
 
 /**
- * Depth limit for minimax. 3×3 stays exhaustive; larger boards use shallow tactical
- * search so hard/impossible stay in the low-millisecond range (no multi-second hangs).
+ * Depth limit for minimax. 3×3 stays exhaustive; larger boards use shallow search
+ * with one extra ply on 4×4 vs the old ladder (still low-millisecond range).
  */
 function maxSearchDepth(boardSize: BoardSize): number {
   if (boardSize <= 3) return 20
-  if (boardSize === 4) return 3
+  if (boardSize === 4) return 4
   if (boardSize === 5) return 2
+  if (boardSize === 6) return 1
   return 1
 }
 
-/** On large boards, hard/impossible fall back to tactical play (wins/blocks/forks/priority). */
+/** Only 7×7 falls back to pure tactical; 5×6 run limited minimax (was tactical-only). */
 function prefersTacticalHard(boardSize: BoardSize): boolean {
-  return boardSize >= 5
+  return boardSize >= 7
 }
 
 /** Strategic cell weights for classic 3×3: center > corners > edges. */
@@ -212,7 +213,7 @@ function optimalMoves(board: Cell[], aiPlayer: Player, ctx: BoardContext): numbe
 }
 
 /**
- * Hard: optimal minimax on 3×3/4×4; tactical (medium-class) on 5×5+ for speed.
+ * Hard: optimal minimax on 3×3; limited-depth minimax on 4×4–6×6; tactical on 7×7.
  * Among equally optimal lines on small boards, pick randomly for variety.
  */
 function chooseHardMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number {
@@ -252,7 +253,7 @@ function openingBookMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): nu
 
 /**
  * Impossible: optimal minimax + deterministic fork/position tie-breaks + opening book on 3×3.
- * On 4×4 uses shallow minimax with deterministic tie-breaks; on 5×5+ uses tactical play.
+ * On 4×4–6×6 uses limited minimax with deterministic tie-breaks; on 7×7 uses tactical play.
  */
 function chooseImpossibleMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number {
   if (prefersTacticalHard(ctx.boardSize)) {
@@ -323,7 +324,7 @@ function priorityIndices(boardSize: BoardSize): number[] {
 
 /**
  * Medium: tactical play without full minimax. Always takes wins/blocks, creates/blocks
- * forks when obvious, otherwise uses cell priority with a ~20% random slip.
+ * forks when obvious, otherwise uses cell priority with a small (~8%) random slip.
  */
 function chooseMediumMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number {
   const moves = getEmptyCells(board)
@@ -345,7 +346,7 @@ function chooseMediumMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): n
   const forkBlocks = moves.filter((m) => createsFork(board, m, human, ctx))
   if (forkBlocks.length === 1) return forkBlocks[0]!
 
-  if (Math.random() < 0.2) {
+  if (Math.random() < 0.08) {
     return randomChoice(moves)
   }
 
@@ -356,21 +357,28 @@ function chooseMediumMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): n
 }
 
 /**
- * Easy: mostly random, but occasionally plays a smart tactical move.
+ * Easy: still beatable, but always takes instant wins and often blocks — ~55% tactical.
  */
 function chooseEasyMove(board: Cell[], ctx: BoardContext, aiPlayer?: Player): number {
   const moves = getEmptyCells(board)
   if (moves.length === 0) throw new Error('No legal moves')
 
-  if (aiPlayer && Math.random() < 0.35) {
-    const human = opponent(aiPlayer)
+  // Never leave a free win on the table even on easy.
+  if (aiPlayer) {
     for (const m of moves) {
       if (evaluateBoard(setCell(board, m, aiPlayer), ctx.boardSize, ctx.winLength).winner === aiPlayer) return m
     }
+  }
+
+  if (aiPlayer && Math.random() < 0.55) {
+    const human = opponent(aiPlayer)
     for (const m of moves) {
       if (evaluateBoard(setCell(board, m, human), ctx.boardSize, ctx.winLength).winner === human) return m
     }
-  } else if (Math.random() < 0.2) {
+    for (const m of moves) {
+      if (createsFork(board, m, aiPlayer, ctx)) return m
+    }
+  } else if (Math.random() < 0.3) {
     for (const player of ['X', 'O'] as Player[]) {
       for (const m of moves) {
         if (evaluateBoard(setCell(board, m, player), ctx.boardSize, ctx.winLength).winner === player) return m
