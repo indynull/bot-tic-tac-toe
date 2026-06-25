@@ -26,11 +26,13 @@ describe('createGame', () => {
     expect(g.pendingEscalation).toBe(false)
   })
 
-  it('supports custom board sizes', () => {
-    const g = createGame({ boardSize: 4 })
-    expect(g.boardSize).toBe(4)
-    expect(g.winLength).toBe(4)
-    expect(g.board).toHaveLength(16)
+  it('supports custom board sizes with scaled win length', () => {
+    const g4 = createGame({ boardSize: 4 })
+    expect(g4.boardSize).toBe(4)
+    expect(g4.winLength).toBe(4)
+    expect(g4.board).toHaveLength(16)
+    const g6 = createGame({ boardSize: 6 })
+    expect(g6.winLength).toBe(5)
   })
 
   it('respects firstPlayer setting', () => {
@@ -142,11 +144,16 @@ describe('draw escalation', () => {
     }
     expect(g.pendingEscalation).toBe(true)
 
-    const planned = resolveEscalation(g)
+    const planned = resolveEscalation(g, { applyEscalation: true })
     expect(planned.boardSize).toBe(4)
     expect(planned.settings.difficulty).toBe('medium')
 
-    g = resetGame(g, { preserveScores: true, preserveSettings: true })
+    // Settings reset without applyEscalation must NOT consume the flag
+    const settingsOnly = resetGame(g, { preserveScores: true, preserveSettings: true })
+    expect(settingsOnly.boardSize).toBe(3)
+    expect(settingsOnly.pendingEscalation).toBe(true)
+
+    g = resetGame(g, { preserveScores: true, preserveSettings: true, applyEscalation: true })
     expect(g.boardSize).toBe(4)
     expect(g.board).toHaveLength(16)
     expect(g.settings.difficulty).toBe('medium')
@@ -162,7 +169,7 @@ describe('draw escalation', () => {
       if (!r.ok) return
       g = r.state
     }
-    g = resetGame(g)
+    g = resetGame(g, { applyEscalation: true })
     expect(g.boardSize).toBe(4)
     expect(g.settings.difficulty).toBe('easy')
   })
@@ -177,9 +184,48 @@ describe('draw escalation', () => {
     }
     expect(g.status).toBe('won')
     expect(g.pendingEscalation).toBe(false)
-    g = resetGame(g)
+    g = resetGame(g, { applyEscalation: true })
     expect(g.boardSize).toBe(3)
     expect(g.settings.difficulty).toBe('easy')
+  })
+
+  it('caps at 7×7 and does not grow further', () => {
+    let g = createGame({ boardSize: 7, settings: { mode: 'vs_ai', difficulty: 'hard' } })
+    g = { ...g, pendingEscalation: true, status: 'draw' }
+    const planned = resolveEscalation(g, { applyEscalation: true })
+    expect(planned.boardSize).toBe(7)
+    g = resetGame(g, { applyEscalation: true })
+    expect(g.boardSize).toBe(7)
+    expect(g.board).toHaveLength(49)
+  })
+
+  it('does not bump difficulty tier on boards larger than 4×4', () => {
+    let g = createGame({ boardSize: 5, settings: { mode: 'vs_ai', difficulty: 'hard' } })
+    g = { ...g, pendingEscalation: true }
+    const planned = resolveEscalation(g, { applyEscalation: true })
+    expect(planned.boardSize).toBe(6)
+    expect(planned.settings.difficulty).toBe('hard')
+  })
+
+  it('resetProgression returns to 3×3', () => {
+    let g = createGame({ boardSize: 5, pendingEscalation: true })
+    g = resetGame(g, { resetProgression: true })
+    expect(g.boardSize).toBe(3)
+    expect(g.pendingEscalation).toBe(false)
+  })
+
+  it('undo after draw clears pending escalation', () => {
+    const moves = [0, 1, 2, 4, 3, 6, 5, 8, 7]
+    let g = createGame()
+    for (const m of moves) {
+      const r = applyMove(g, m)
+      if (!r.ok) return
+      g = r.state
+    }
+    expect(g.pendingEscalation).toBe(true)
+    g = undoMove(g)
+    expect(g.status).toBe('in_progress')
+    expect(g.pendingEscalation).toBe(false)
   })
 
   it('detects 4-in-a-row on a 4×4 board', () => {
@@ -195,6 +241,20 @@ describe('draw escalation', () => {
     expect(g.status).toBe('won')
     expect(g.winner).toBe('X')
     expect(g.winningLine).toEqual([0, 1, 2, 3])
+  })
+
+  it('detects diagonal win on 5×5 with 4-in-a-row', () => {
+    // Place X on diagonal 0,6,12,18 (indices for 5×5: row*5+col)
+    let g = createGame({ boardSize: 5 })
+    expect(g.winLength).toBe(4)
+    const seq = [0, 1, 6, 2, 12, 3, 18] // X at 0,6,12,18
+    for (const m of seq) {
+      const r = applyMove(g, m)
+      if (!r.ok) return
+      g = r.state
+    }
+    expect(g.status).toBe('won')
+    expect(g.winner).toBe('X')
   })
 })
 

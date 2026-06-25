@@ -14,6 +14,8 @@ import {
   DEFAULT_SETTINGS,
   nextBoardSize,
   nextDifficulty,
+  shouldEscalateDifficulty,
+  winLengthForBoard,
 } from './types'
 
 export interface CreateGameOptions {
@@ -29,8 +31,14 @@ export interface ResetGameOptions {
   settings?: Partial<Settings>
   /** Force a specific board size (skips draw-escalation logic). */
   boardSize?: BoardSize
-  /** When true, apply pending draw escalation (bigger board + harder AI). Default: true on reset. */
+  /**
+   * When true, apply pending draw escalation (bigger board + harder AI).
+   * Default: **false** — only explicit "New game" should pass true so theme/settings
+   * changes don't consume an escalation token.
+   */
   applyEscalation?: boolean
+  /** Reset ladder back to classic 3×3 (e.g. reset scores / user opt-out). */
+  resetProgression?: boolean
 }
 
 function mergeSettings(partial?: Partial<Settings>): Settings {
@@ -57,7 +65,7 @@ export function createGame(options: CreateGameOptions = {}): GameState {
   const boardSize = options.boardSize ?? DEFAULT_BOARD_SIZE
   return {
     boardSize,
-    winLength: boardSize,
+    winLength: winLengthForBoard(boardSize),
     board: createEmptyBoard(boardSize),
     currentPlayer: settings.firstPlayer,
     status: 'in_progress',
@@ -111,6 +119,7 @@ export function applyMove(state: GameState, cellIndex: number): ApplyMoveResult 
 
 /**
  * Resolve board size + settings for a new game, optionally escalating after a draw.
+ * Escalation only runs when `applyEscalation: true` (explicit New game).
  */
 export function resolveEscalation(
   state: GameState,
@@ -121,18 +130,22 @@ export function resolveEscalation(
     ? { ...state.settings, ...options.settings }
     : mergeSettings(options.settings)
 
+  if (options.resetProgression) {
+    return { boardSize: DEFAULT_BOARD_SIZE, settings }
+  }
+
   if (options.boardSize !== undefined) {
     return { boardSize: options.boardSize, settings }
   }
 
-  const shouldEscalate = options.applyEscalation !== false && state.pendingEscalation
+  const shouldEscalate = options.applyEscalation === true && state.pendingEscalation
   if (!shouldEscalate) {
     return { boardSize: state.boardSize, settings }
   }
 
   const boardSize = nextBoardSize(state.boardSize)
-  // Only bump AI difficulty in vs-computer mode (PvP still gets bigger board)
-  if (settings.mode === 'vs_ai') {
+  // Bump difficulty only while search is still meaningful (small boards)
+  if (settings.mode === 'vs_ai' && shouldEscalateDifficulty(state.boardSize)) {
     settings = { ...settings, difficulty: nextDifficulty(settings.difficulty) }
   }
   return { boardSize, settings }
@@ -141,11 +154,14 @@ export function resolveEscalation(
 export function resetGame(state: GameState, options: ResetGameOptions = {}): GameState {
   const preserveScores = options.preserveScores !== false
   const { boardSize, settings } = resolveEscalation(state, options)
+  // If we did not apply escalation, preserve pending flag so New game can still escalate
+  const consumedEscalation = options.applyEscalation === true && state.pendingEscalation
+  const pendingEscalation = consumedEscalation || options.resetProgression ? false : state.pendingEscalation
   return createGame({
     settings,
     scores: preserveScores ? cloneScores(state.scores) : { ...DEFAULT_SCORES },
     boardSize,
-    pendingEscalation: false,
+    pendingEscalation,
   })
 }
 

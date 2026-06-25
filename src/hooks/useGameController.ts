@@ -36,8 +36,13 @@ function aiDelayMs(difficulty: Difficulty): number {
 }
 
 function initialState(): GameState {
-  const { scores, settings } = loadPersisted()
-  return createGame({ scores, settings })
+  const { scores, settings, progression } = loadPersisted()
+  return createGame({
+    scores,
+    settings,
+    boardSize: progression.boardSize,
+    pendingEscalation: progression.pendingEscalation,
+  })
 }
 
 export function useGameController() {
@@ -55,10 +60,13 @@ export function useGameController() {
     }
   }, [])
 
-  // Persist scores + settings
+  // Persist scores, settings, and draw-escalation progression
   useEffect(() => {
-    savePersisted(game.scores, game.settings)
-  }, [game.scores, game.settings])
+    savePersisted(game.scores, game.settings, {
+      boardSize: game.boardSize,
+      pendingEscalation: game.pendingEscalation,
+    })
+  }, [game.scores, game.settings, game.boardSize, game.pendingEscalation])
 
   // Apply theme to document
   useEffect(() => {
@@ -123,11 +131,22 @@ export function useGameController() {
   const newGame = useCallback(() => {
     clearAiTimer()
     setAiThinking(false)
-    setGame((g) => resetGame(g, { preserveScores: true, preserveSettings: true }))
+    // Only explicit New game consumes pending draw escalation
+    setGame((g) =>
+      resetGame(g, { preserveScores: true, preserveSettings: true, applyEscalation: true }),
+    )
   }, [clearAiTimer])
 
   const doResetScores = useCallback(() => {
-    setGame((g) => resetScores(g))
+    // Reset scores and return to classic 3×3 ladder
+    setGame((g) => {
+      const cleared = resetScores(g)
+      return resetGame(cleared, {
+        preserveScores: true,
+        preserveSettings: true,
+        resetProgression: true,
+      })
+    })
   }, [])
 
   const doUndo = useCallback(() => {
@@ -143,7 +162,12 @@ export function useGameController() {
       setGame((g) => {
         const next = updateSettings(g, partial)
         if (restartGame || partial.mode !== undefined || partial.firstPlayer !== undefined || partial.humanPlayer !== undefined) {
-          return resetGame(next, { preserveScores: true, preserveSettings: true })
+          // Settings/mode restart must NOT consume draw escalation
+          return resetGame(next, {
+            preserveScores: true,
+            preserveSettings: true,
+            applyEscalation: false,
+          })
         }
         return next
       })

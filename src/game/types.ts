@@ -96,6 +96,21 @@ export function nextBoardSize(current: BoardSize): BoardSize {
   return clampBoardSize(current + 1)
 }
 
+/**
+ * Win length for an N×N board. Full-line wins on 6×6/7×7 are nearly unwinnable,
+ * so we cap at 5-in-a-row and use 4-in-a-row on 4×4/5×5 for a playable ladder.
+ */
+export function winLengthForBoard(boardSize: BoardSize): number {
+  if (boardSize <= 3) return 3
+  if (boardSize <= 5) return 4
+  return 5
+}
+
+/** Whether escalating difficulty is meaningful (shallow search on huge boards). */
+export function shouldEscalateDifficulty(boardSize: BoardSize): boolean {
+  return boardSize <= 4
+}
+
 export const DEFAULT_SETTINGS: Settings = {
   firstPlayer: 'X',
   humanPlayer: 'X',
@@ -106,10 +121,23 @@ export const DEFAULT_SETTINGS: Settings = {
 }
 
 export const STORAGE_KEY = 'ttt-v1'
-export const STORAGE_VERSION = 1
+/** Bumped when persisted progression fields were added. */
+export const STORAGE_VERSION = 2
+
+export interface ProgressionState {
+  boardSize: BoardSize
+  pendingEscalation: boolean
+}
+
+export const DEFAULT_PROGRESSION: ProgressionState = {
+  boardSize: DEFAULT_BOARD_SIZE,
+  pendingEscalation: false,
+}
 
 export interface PersistedData {
   version: number
   scores: Scores
   settings: Settings
+  /** Draw-escalation ladder (board size + pending flag). */
+  progression?: ProgressionState
 }

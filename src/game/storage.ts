@@ -1,5 +1,12 @@
-import type { PersistedData, Scores, Settings } from './types'
-import { DEFAULT_SCORES, DEFAULT_SETTINGS, STORAGE_KEY, STORAGE_VERSION } from './types'
+import type { BoardSize, PersistedData, ProgressionState, Scores, Settings } from './types'
+import {
+  clampBoardSize,
+  DEFAULT_PROGRESSION,
+  DEFAULT_SCORES,
+  DEFAULT_SETTINGS,
+  STORAGE_KEY,
+  STORAGE_VERSION,
+} from './types'
 
 function isPlayer(v: unknown): v is 'X' | 'O' {
   return v === 'X' || v === 'O'
@@ -34,11 +41,28 @@ function isSettings(v: unknown): v is Settings {
   )
 }
 
-export function serializePersisted(scores: Scores, settings: Settings): string {
+function isProgression(v: unknown): v is ProgressionState {
+  if (!v || typeof v !== 'object') return false
+  const p = v as Record<string, unknown>
+  if (typeof p.pendingEscalation !== 'boolean') return false
+  if (typeof p.boardSize !== 'number') return false
+  const size = clampBoardSize(p.boardSize)
+  return size === p.boardSize
+}
+
+export function serializePersisted(
+  scores: Scores,
+  settings: Settings,
+  progression: ProgressionState = DEFAULT_PROGRESSION,
+): string {
   const data: PersistedData = {
     version: STORAGE_VERSION,
     scores,
     settings,
+    progression: {
+      boardSize: clampBoardSize(progression.boardSize) as BoardSize,
+      pendingEscalation: progression.pendingEscalation,
+    },
   }
   return JSON.stringify(data)
 }
@@ -49,30 +73,53 @@ export function deserializePersisted(raw: string | null): PersistedData | null {
     const parsed: unknown = JSON.parse(raw)
     if (!parsed || typeof parsed !== 'object') return null
     const obj = parsed as Record<string, unknown>
-    if (obj.version !== STORAGE_VERSION) return null
+    // Accept v1 (scores+settings only) and v2 (+progression)
+    if (obj.version !== 1 && obj.version !== STORAGE_VERSION) return null
     if (!isScores(obj.scores) || !isSettings(obj.settings)) return null
+    const progression = isProgression(obj.progression) ? obj.progression : { ...DEFAULT_PROGRESSION }
     return {
       version: STORAGE_VERSION,
       scores: obj.scores,
       settings: obj.settings,
+      progression,
     }
   } catch {
     return null
   }
 }
 
-export function loadPersisted(): { scores: Scores; settings: Settings } {
+export function loadPersisted(): {
+  scores: Scores
+  settings: Settings
+  progression: ProgressionState
+} {
   if (typeof localStorage === 'undefined') {
-    return { scores: { ...DEFAULT_SCORES }, settings: { ...DEFAULT_SETTINGS } }
+    return {
+      scores: { ...DEFAULT_SCORES },
+      settings: { ...DEFAULT_SETTINGS },
+      progression: { ...DEFAULT_PROGRESSION },
+    }
   }
   try {
     const data = deserializePersisted(localStorage.getItem(STORAGE_KEY))
     if (!data) {
-      return { scores: { ...DEFAULT_SCORES }, settings: getDefaultSettingsWithTheme() }
+      return {
+        scores: { ...DEFAULT_SCORES },
+        settings: getDefaultSettingsWithTheme(),
+        progression: { ...DEFAULT_PROGRESSION },
+      }
     }
-    return { scores: data.scores, settings: data.settings }
+    return {
+      scores: data.scores,
+      settings: data.settings,
+      progression: data.progression ?? { ...DEFAULT_PROGRESSION },
+    }
   } catch {
-    return { scores: { ...DEFAULT_SCORES }, settings: getDefaultSettingsWithTheme() }
+    return {
+      scores: { ...DEFAULT_SCORES },
+      settings: getDefaultSettingsWithTheme(),
+      progression: { ...DEFAULT_PROGRESSION },
+    }
   }
 }
 
@@ -84,10 +131,14 @@ function getDefaultSettingsWithTheme(): Settings {
   return settings
 }
 
-export function savePersisted(scores: Scores, settings: Settings): void {
+export function savePersisted(
+  scores: Scores,
+  settings: Settings,
+  progression: ProgressionState = DEFAULT_PROGRESSION,
+): void {
   if (typeof localStorage === 'undefined') return
   try {
-    localStorage.setItem(STORAGE_KEY, serializePersisted(scores, settings))
+    localStorage.setItem(STORAGE_KEY, serializePersisted(scores, settings, progression))
   } catch {
     // quota / private mode — ignore
   }

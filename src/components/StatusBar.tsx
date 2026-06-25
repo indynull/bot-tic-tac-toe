@@ -39,10 +39,13 @@ export function getStatusMessage(game: GameState, aiThinking: boolean): string {
     }
     if (game.pendingEscalation && game.boardSize < 7) {
       const next = game.boardSize + 1
-      if (game.settings.mode === 'vs_ai') {
-        return `It's a draw — next game escalates to ${next}×${next} (harder AI)`
+      if (game.settings.mode === 'vs_ai' && game.boardSize <= 4) {
+        return `It's a draw — New game → ${next}×${next} (AI tier up)`
       }
-      return `It's a draw — next game escalates to ${next}×${next}`
+      if (game.settings.mode === 'vs_ai') {
+        return `It's a draw — New game → ${next}×${next} (same AI tier; depth-limited on large boards)`
+      }
+      return `It's a draw — New game → ${next}×${next}`
     }
     if (game.pendingEscalation && game.boardSize >= 7) {
       return "It's a draw — max board size reached"
@@ -50,7 +53,7 @@ export function getStatusMessage(game: GameState, aiThinking: boolean): string {
     return "It's a draw"
   }
   if (game.boardSize > 3) {
-    const prefix = `${game.boardSize}×${game.boardSize} · get ${game.winLength} in a row · `
+    const prefix = `${game.boardSize}×${game.boardSize} · ${game.winLength} in a row · `
     if (game.settings.mode === 'local_pvp') {
       return `${prefix}${game.currentPlayer}'s turn — pass the device`
     }
