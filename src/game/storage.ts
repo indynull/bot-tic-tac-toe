@@ -44,10 +44,17 @@ function isSettings(v: unknown): v is Settings {
 function isProgression(v: unknown): v is ProgressionState {
   if (!v || typeof v !== 'object') return false
   const p = v as Record<string, unknown>
-  if (typeof p.pendingEscalation !== 'boolean') return false
   if (typeof p.boardSize !== 'number') return false
   const size = clampBoardSize(p.boardSize)
   return size === p.boardSize
+}
+
+/** Migrate v1/v2 progression (may include obsolete pendingEscalation) → v3 shape. */
+function normalizeProgression(raw: unknown): ProgressionState {
+  if (!raw || typeof raw !== 'object') return { ...DEFAULT_PROGRESSION }
+  const p = raw as Record<string, unknown>
+  if (typeof p.boardSize !== 'number') return { ...DEFAULT_PROGRESSION }
+  return { boardSize: clampBoardSize(p.boardSize) as BoardSize }
 }
 
 export function serializePersisted(
@@ -61,7 +68,6 @@ export function serializePersisted(
     settings,
     progression: {
       boardSize: clampBoardSize(progression.boardSize) as BoardSize,
-      pendingEscalation: progression.pendingEscalation,
     },
   }
   return JSON.stringify(data)
@@ -73,10 +79,11 @@ export function deserializePersisted(raw: string | null): PersistedData | null {
     const parsed: unknown = JSON.parse(raw)
     if (!parsed || typeof parsed !== 'object') return null
     const obj = parsed as Record<string, unknown>
-    // Accept v1 (scores+settings only) and v2 (+progression)
-    if (obj.version !== 1 && obj.version !== STORAGE_VERSION) return null
+    // Accept v1 (scores+settings), v2 (+pendingEscalation progression), v3 (boardSize only)
+    if (obj.version !== 1 && obj.version !== 2 && obj.version !== STORAGE_VERSION) return null
     if (!isScores(obj.scores) || !isSettings(obj.settings)) return null
-    const progression = isProgression(obj.progression) ? obj.progression : { ...DEFAULT_PROGRESSION }
+    // Always normalize so v2 extra fields (pendingEscalation) are stripped
+    const progression = normalizeProgression(obj.progression)
     return {
       version: STORAGE_VERSION,
       scores: obj.scores,

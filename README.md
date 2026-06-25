@@ -1,15 +1,16 @@
 # Tic-Tac-Toe
 
-A polished, fully client-side **3×3 tic-tac-toe** web app with local pass-and-play, vs-computer (easy / medium / hard), scores, themes, optional sound, keyboard support, and a pure game engine covered by unit tests.
+A polished, fully client-side tic-tac-toe web app with local pass-and-play, vs-computer (easy / medium / hard / impossible), scores, themes, optional sound, keyboard support, and a pure game engine covered by unit tests.
 
 ## Features
 
 - **Local PvP** — pass-and-play on one device
-- **Vs computer** — easy / medium / hard / **impossible** (minimax + alpha-beta, fork detection, opening book; optimal on 3×3)
+- **Vs computer** — easy / medium / hard / **impossible** (optimal minimax on 3×3; tactical/shallow on larger boards — see AI notes)
+- **In-place board growth** — when the board fills with no winner, it expands (3→4→…→7) keeping existing marks in the **top-left**; play continues (a scored draw only happens at 7×7)
 - **Session scores** — X / O / draws, persisted in `localStorage`
 - **Settings** — first player, play as X/O (vs AI), light/dark theme, sound on/off
-- **Undo** — one move in PvP; human+AI pair in vs computer
-- **Accessible board** — buttons with labels, live status region, keyboard play
+- **Undo** — one move in PvP; human+AI pair in vs computer (size is **sticky** after growth — undo does not shrink the board)
+- **Accessible board** — buttons with labels, live status region (assertive on growth), keyboard play
 - **Responsive** — usable ~360px mobile and desktop widths
 
 ## Prerequisites
@@ -77,27 +78,43 @@ npm run preview
 
 ### Board representation
 
-Fixed **length-9 array**, row-major: `index = row * 3 + col` (0 = top-left, 8 = bottom-right). Cells are `null | 'X' | 'O'`. Updates are immutable (new arrays / state objects).
+Variable **N×N** array (`boardSize` 3–7), row-major: `index = row * boardSize + col`. Cells are `null | 'X' | 'O'`. Updates are immutable (new arrays / state objects).
 
 ### Engine API (highlights)
 
-- `createGame(settings?)` — initial state
-- `applyMove(state, cellIndex)` — `{ ok: true, state }` or `{ ok: false, reason }`
-- `resetGame(state, options?)` — new board; scores/settings preserved by default
-- `undoMove` / `undoLastTurn` — history-based undo (pair undo in vs AI)
+- `createGame(options?)` — initial state (optional `boardSize`)
+- `applyMove(state, cellIndex)` — on a full board with no winner, may **grow in place** via `growBoardInPlace` / `planBoardGrowth`
+- `resetGame(state, options?)` — new empty board at current ladder size (`resetProgression` returns to 3×3)
+- `undoMove` / `undoLastTurn` — history-based undo (pair undo in vs AI); **size sticky** after growth
 - `getLegalMoves(state)` — empty cells while in progress
-- `chooseMove(state, difficulty?)` — AI policy (easy / medium / hard)
+- `chooseMove(state, difficulty?)` — AI policy (easy / medium / hard / impossible)
+
+### In-place growth (product rules)
+
+1. When a move would fill the board without a win, the engine tries **N+1** (then N+2 … up to 7).
+2. Existing marks embed in the **top-left**; a new empty ring appears on the bottom/right.
+3. Win length scales: 3 on 3×3, **4** on 4×4/5×5, **5** on 6×6/7×7 (playable ladder; not always full-line).
+4. If the player about to move would **win immediately** on a candidate size, that size is skipped.
+5. Growth sets `justGrew` for one status announcement; difficulty tier-up only when growing **from 3×3** in vs-AI (labels stay honest on 4×4+).
+6. A counted **draw** happens only when the board is full at **7×7** (no further growth).
 
 ### AI notes
 
-3×3 is small; **hard** and **impossible** both play optimally via minimax + alpha-beta (optimal vs optimal always draws). **Hard** picks randomly among optimal moves for variety. **Impossible** uses deterministic fork/position tie-breaks plus an opening book (center / corner responses) so it always applies maximum pressure. Medium is tactical (wins/blocks/forks + priority cells, ~20% slip) without full search. Easy is mostly random but occasionally blocks/wins.
+| Board | easy | medium | hard | impossible |
+|-------|------|--------|------|------------|
+| **3×3** | mostly random | tactical | optimal minimax | optimal + book/forks |
+| **4×4** | mostly random | tactical | shallow minimax (depth 3) | shallow + deterministic ties |
+| **5×5+** | mostly random | tactical | **tactical only** (fast) | **tactical only** (fast) |
+
+Tier names are historical; settings copy and `aiPolicyNote()` describe the real policy. Hard/impossible are only fully optimal on classic 3×3.
 
 ## Rules (quick)
 
 1. Players alternate placing **X** and **O** on empty cells.
-2. First to three in a row (row, column, or diagonal) wins.
-3. Full board with no three-in-a-row is a **draw**.
-4. No moves after the game ends until **New game**.
+2. First to **K-in-a-row** wins (K depends on board size — see growth rules).
+3. Full board with no winner **grows in place** (marks kept) until 7×7; only then is it a scored **draw**.
+4. **New game** clears marks but keeps the current ladder size; **Reset scores** returns to 3×3.
+5. No moves after a terminal win/draw until **New game**.
 
 ## Accessibility
 
@@ -110,7 +127,7 @@ Fixed **length-9 array**, row-major: `index = row * 3 + col` (0 = top-left, 8 = 
 
 ## Persistence
 
-Key: `ttt-v1` (versioned). Stores scores + settings. Corrupt or unknown versions fall back to defaults without crashing.
+Key: `ttt-v1` (versioned payload, currently **v3**). Stores scores, settings, and ladder `boardSize`. v1/v2 loads migrate (v2 `pendingEscalation` is dropped). Corrupt or unknown versions fall back to defaults without crashing.
 
 ## Manual QA checklist
 
@@ -128,7 +145,8 @@ Key: `ttt-v1` (versioned). Stores scores + settings. Corrupt or unknown versions
 ## Known limitations / stretch not included
 
 - No online multiplayer or accounts
-- No 4×4 or custom boards
+- No center-embed growth geometry (top-left only by design)
+- Hard/impossible are not optimal on 4×4+ (speed tradeoff)
 - No PWA / service worker
 - No Playwright e2e suite (unit tests only)
 - Sound uses Web Audio oscillators (may be blocked until first user gesture)

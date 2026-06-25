@@ -73,6 +73,7 @@ export default function App() {
       <SettingsModal
         open={ctrl.settingsOpen}
         settings={ctrl.game.settings}
+        boardSize={ctrl.game.boardSize}
         onClose={() => ctrl.setSettingsOpen(false)}
         onFirstPlayer={ctrl.setFirstPlayer}
         onHumanPlayer={ctrl.setHumanPlayer}

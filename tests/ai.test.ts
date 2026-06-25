@@ -246,18 +246,21 @@ describe('status messages', () => {
     expect(g.status).toBe('won')
     expect(getStatusMessage(g, false)).toContain('as expected')
 
-    // Full-board "draw" now grows in place; max-board draw copy still mentions best outcome
     g = createGame({
       boardSize: 7,
       settings: { mode: 'vs_ai', humanPlayer: 'X', difficulty: 'impossible' },
     })
-    g = { ...g, status: 'draw', winner: null, pendingEscalation: true }
-    expect(getStatusMessage(g, false)).toContain('best possible outcome')
+    g = { ...g, status: 'draw', winner: null }
+    expect(getStatusMessage(g, false)).toContain('max board size')
   })
 
-  it('mentions in-place growth on boards larger than 3×3 while in progress', () => {
-    const g = createGame({ boardSize: 4, settings: { mode: 'local_pvp' } })
-    expect(getStatusMessage(g, false)).toContain('board grew in place')
+  it('announces in-place growth via justGrew status copy', () => {
+    const g = {
+      ...createGame({ boardSize: 4, settings: { mode: 'local_pvp' } }),
+      justGrew: true,
+      previousBoardSize: 3 as const,
+    }
+    expect(getStatusMessage(g, false)).toContain('Board grew 3×3 → 4×4')
   })
 
   it('uses deeper thinking copy on hard while AI thinks', () => {
