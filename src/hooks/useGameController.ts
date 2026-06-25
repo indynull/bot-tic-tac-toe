@@ -18,23 +18,20 @@ import {
   type Theme,
 } from '../game'
 
-/**
- * Artificial thinking delay. On boards > 3×3 keep delays tiny so growth feels instant
- * (search is already tactical/shallow on large boards).
- */
+/** Artificial thinking delay; shorter on large boards (shallow / tactical AI). */
 function aiDelayMs(difficulty: Difficulty, boardSize: number): number {
   if (boardSize > 3) {
     switch (difficulty) {
       case 'easy':
-        return 40
+        return 120
       case 'medium':
-        return 60
+        return 180
       case 'hard':
-        return 80
+        return 220
       case 'impossible':
-        return 100
+        return 260
       default:
-        return 60
+        return 180
     }
   }
   switch (difficulty) {
@@ -53,10 +50,12 @@ function aiDelayMs(difficulty: Difficulty, boardSize: number): number {
 
 function initialState(): GameState {
   const { scores, settings, progression } = loadPersisted()
+  const size = progression.boardSize
   return createGame({
     scores,
     settings,
-    boardSize: progression.boardSize,
+    boardSize: size,
+    ladderSize: size,
   })
 }
 
@@ -75,12 +74,12 @@ export function useGameController() {
     }
   }, [])
 
-  // Persist scores, settings, and ladder board size
+  // Persist scores, settings, and ladder size (next new game)
   useEffect(() => {
     savePersisted(game.scores, game.settings, {
-      boardSize: game.boardSize,
+      boardSize: game.ladderSize,
     })
-  }, [game.scores, game.settings, game.boardSize])
+  }, [game.scores, game.settings, game.ladderSize])
 
   // Apply theme to document
   useEffect(() => {
@@ -145,12 +144,12 @@ export function useGameController() {
   const newGame = useCallback(() => {
     clearAiTimer()
     setAiThinking(false)
-    // New empty board at current ladder size (growth happens in-place during play)
+    // Fresh empty board at ladder size (advanced after draws)
     setGame((g) => resetGame(g, { preserveScores: true, preserveSettings: true }))
   }, [clearAiTimer])
 
   const doResetScores = useCallback(() => {
-    // Reset scores and return to classic 3×3 ladder
+    // Clear scores and return to classic 3×3 ladder
     setGame((g) => {
       const cleared = resetScores(g)
       return resetGame(cleared, {
