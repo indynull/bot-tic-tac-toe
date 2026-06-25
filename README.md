@@ -40,6 +40,31 @@ npm run lint
 
 Open the URL printed by `npm run dev` (typically `http://localhost:5173`).
 
+## Deploy (free — GitHub Pages)
+
+The game is a static Vite build (`dist/`). CI on `main` runs lint → test → build and publishes to **GitHub Pages** (no extra account or paid tier).
+
+**Live URL (after first successful deploy):**  
+`https://indynull.github.io/bot-tic-tac-toe/`
+
+### One-time repo setup
+
+1. **Settings → Pages → Build and deployment**
+   - Source: **GitHub Actions** (not “Deploy from a branch”).
+2. Push to `main` (or merge a PR). The [CI workflow](.github/workflows/ci.yml) uploads `dist` and deploys.
+3. First run may prompt to approve the **github-pages** environment under **Settings → Environments** if protection rules are on.
+
+PRs only run verify (lint/test/build); deploy runs on pushes to `main`.
+
+### Local production build for Pages
+
+```bash
+BASE_PATH=/bot-tic-tac-toe/ npm run build
+npm run preview
+```
+
+`BASE_PATH` must match the repo name so asset URLs resolve under the project site path. For a custom domain or user site (`username.github.io`), leave it unset (defaults to `/`).
+
 ## Architecture
 
 | Area | Location | Role |
