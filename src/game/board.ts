@@ -1,5 +1,5 @@
 import type { BoardSize, Cell, Player } from './types'
-import { DEFAULT_BOARD_SIZE, WIN_LINES } from './types'
+import { DEFAULT_BOARD_SIZE, MAX_BOARD_SIZE, WIN_LINES, winLengthForBoard } from './types'
 
 /** @deprecated Prefer boardSize² from game state; kept for 3×3 compatibility. */
 export const BOARD_SIZE = 9
@@ -137,4 +137,90 @@ export function evaluateBoard(
     return { status: 'draw', winner: null, winningLine: null }
   }
   return { status: 'in_progress', winner: null, winningLine: null }
+}
+
+/**
+ * Embed an N×N board in the top-left of an M×M board (M ≥ N).
+ * Existing marks keep their row/col; new ring cells are empty.
+ */
+export function embedBoard(board: Cell[], fromSize: BoardSize, toSize: BoardSize): Cell[] {
+  if (toSize < fromSize) {
+    throw new Error(`Cannot embed ${fromSize}×${fromSize} into smaller ${toSize}×${toSize}`)
+  }
+  if (toSize === fromSize) return board.slice()
+  const next = createEmptyBoard(toSize)
+  for (let row = 0; row < fromSize; row++) {
+    for (let col = 0; col < fromSize; col++) {
+      const src = rowColToIndex(row, col, fromSize)
+      const dst = rowColToIndex(row, col, toSize)
+      next[dst] = board[src]!
+    }
+  }
+  return next
+}
+
+/** Remap a cell index from one board size to another (top-left embed). */
+export function remapIndex(index: number, fromSize: BoardSize, toSize: BoardSize): number {
+  if (fromSize === toSize) return index
+  const { row, col } = indexToRowCol(index, fromSize)
+  return rowColToIndex(row, col, toSize)
+}
+
+/** True if `player` has at least one legal move that wins immediately. */
+export function hasImmediateWin(
+  board: Cell[],
+  boardSize: BoardSize,
+  winLength: number,
+  player: Player,
+): boolean {
+  for (const idx of getEmptyCells(board)) {
+    const after = setCell(board, idx, player)
+    if (evaluateBoard(after, boardSize, winLength).winner === player) return true
+  }
+  return false
+}
+
+export interface GrowPlan {
+  boardSize: BoardSize
+  winLength: number
+  board: Cell[]
+  grew: boolean
+}
+
+/**
+ * Grow a drawn board in place so play can continue.
+ * Tries +1 size first; if the player about to move would win immediately, tries larger
+ * sizes up to MAX_BOARD_SIZE. Returns grew:false when already at max or growth impossible.
+ */
+export function planBoardGrowth(
+  board: Cell[],
+  boardSize: BoardSize,
+  nextPlayer: Player,
+): GrowPlan {
+  if (boardSize >= MAX_BOARD_SIZE) {
+    return {
+      boardSize,
+      winLength: winLengthForBoard(boardSize),
+      board: board.slice(),
+      grew: false,
+    }
+  }
+
+  for (let size = boardSize + 1; size <= MAX_BOARD_SIZE; size++) {
+    const candidate = size as BoardSize
+    const winLength = winLengthForBoard(candidate)
+    const grown = embedBoard(board, boardSize, candidate)
+    // Full embed should not already be a terminal position; extra safety check
+    const outcome = evaluateBoard(grown, candidate, winLength)
+    if (outcome.status === 'won') continue
+    if (hasImmediateWin(grown, candidate, winLength, nextPlayer)) continue
+    return { boardSize: candidate, winLength, board: grown, grew: true }
+  }
+
+  return {
+    boardSize,
+    winLength: winLengthForBoard(boardSize),
+    board: board.slice(),
+    grew: false,
+  }
 }

@@ -97,6 +97,36 @@ describe('larger boards', () => {
     expect(legal).toContain(move)
   })
 
+  it('hard/impossible on 5×5+ return quickly (tactical, not deep minimax)', () => {
+    let g = createGame({
+      boardSize: 5,
+      settings: { mode: 'vs_ai', humanPlayer: 'X', difficulty: 'impossible' },
+    })
+    const r = applyMove(g, 12) // center-ish
+    if (!r.ok) throw new Error('setup failed')
+    g = r.state
+    const t0 = performance.now()
+    const move = chooseMove(g, 'impossible')
+    const elapsed = performance.now() - t0
+    expect(getLegalMoves(g)).toContain(move)
+    // Must stay in low-millisecond range (allow CI slack)
+    expect(elapsed).toBeLessThan(200)
+  })
+
+  it('hard on 6×6 completes in milliseconds', () => {
+    const g = createGame({
+      boardSize: 6,
+      settings: { mode: 'vs_ai', humanPlayer: 'X', difficulty: 'hard', firstPlayer: 'O' },
+    })
+    // AI is O, first player O — empty board
+    const t0 = performance.now()
+    const move = chooseMove(g, 'hard')
+    const elapsed = performance.now() - t0
+    expect(move).toBeGreaterThanOrEqual(0)
+    expect(move).toBeLessThan(36)
+    expect(elapsed).toBeLessThan(200)
+  })
+
   it('medium takes an instant win on 4×4', () => {
     // X has three in a row on top needing one more at index 3; it's X's turn via medium as AI
     let g = createGame({
@@ -216,17 +246,21 @@ describe('status messages', () => {
     expect(g.status).toBe('won')
     expect(getStatusMessage(g, false)).toContain('as expected')
 
-    g = createGame({ settings: { mode: 'vs_ai', humanPlayer: 'X', difficulty: 'impossible' } })
-    // Force draw via optimal play is heavy; set draw status via full board play if needed.
-    // X4 O0 X8 O2 X1 O7 X3 O5 X6 = draw
-    for (const m of [4, 0, 8, 2, 1, 7, 3, 5, 6]) {
-      const r = applyMove(g, m)
-      if (!r.ok) throw new Error('setup failed')
-      g = r.state
+    g = createGame({
+      boardSize: 7,
+      settings: { mode: 'vs_ai', humanPlayer: 'X', difficulty: 'impossible' },
+    })
+    g = { ...g, status: 'draw', winner: null }
+    expect(getStatusMessage(g, false)).toContain('max board size')
+  })
+
+  it('announces in-place growth via justGrew status copy', () => {
+    const g = {
+      ...createGame({ boardSize: 4, settings: { mode: 'local_pvp' } }),
+      justGrew: true,
+      previousBoardSize: 3 as const,
     }
-    if (g.status === 'draw') {
-      expect(getStatusMessage(g, false)).toContain('best possible outcome')
-    }
+    expect(getStatusMessage(g, false)).toContain('Board grew 3×3 → 4×4')
   })
 
   it('uses deeper thinking copy on hard while AI thinks', () => {
