@@ -1,6 +1,6 @@
 import { evaluateBoard, getEmptyCells, indexToRowCol, opponent, setCell } from './board'
 import type { BoardSize, Cell, Difficulty, GameState, Player } from './types'
-import { DEFAULT_BOARD_SIZE, WIN_LINES } from './types'
+import { DEFAULT_BOARD_SIZE, winLengthForBoard, WIN_LINES } from './types'
 import { getAiPlayer, getLegalMoves as stateLegalMoves } from './engine'
 
 function randomChoice<T>(items: T[]): T {
@@ -386,10 +386,13 @@ export function chooseHardMoveForBoard(
   aiPlayer: Player,
   boardSize: BoardSize = DEFAULT_BOARD_SIZE,
 ): number {
-  return chooseHardMove(board, aiPlayer, { boardSize, winLength: boardSize })
+  return chooseHardMove(board, aiPlayer, { boardSize, winLength: winLengthForBoard(boardSize) })
 }
 
 /** Exported for tests: impossible-tier move on a raw board. */
 export function chooseImpossibleMoveForBoard(board: Cell[], aiPlayer: Player): number {
-  return chooseImpossibleMove(board, aiPlayer, { boardSize: DEFAULT_BOARD_SIZE, winLength: DEFAULT_BOARD_SIZE })
+  return chooseImpossibleMove(board, aiPlayer, {
+    boardSize: DEFAULT_BOARD_SIZE,
+    winLength: winLengthForBoard(DEFAULT_BOARD_SIZE),
+  })
 }
