@@ -20,31 +20,32 @@ import {
 
 /** Artificial thinking delay; shorter on large boards (shallow / tactical AI). */
 function aiDelayMs(difficulty: Difficulty, boardSize: number): number {
+  // Larger boards still think briefly; impossible/hard feel heavier without blocking UI.
   if (boardSize > 3) {
     switch (difficulty) {
       case 'easy':
-        return 120
+        return 140
       case 'medium':
-        return 180
-      case 'hard':
         return 220
+      case 'hard':
+        return 320
       case 'impossible':
-        return 260
+        return 400 + Math.floor(Math.random() * 200)
       default:
-        return 180
+        return 220
     }
   }
   switch (difficulty) {
     case 'easy':
-      return 280
+      return 320
     case 'medium':
-      return 450
+      return 500
     case 'hard':
-      return 700
+      return 780
     case 'impossible':
-      return 850 + Math.floor(Math.random() * 650)
+      return 950 + Math.floor(Math.random() * 750)
     default:
-      return 700
+      return 780
   }
 }
 
@@ -189,6 +190,14 @@ export function useGameController() {
       if (gameRef.current.moveHistory.length > 0 && gameRef.current.status === 'in_progress') {
         const ok = window.confirm('Changing mode starts a new game. Continue?')
         if (!ok) return
+      }
+      // Switching into vs computer floors at hard — no soft entry via easy/medium defaults.
+      if (mode === 'vs_ai') {
+        const current = gameRef.current.settings.difficulty
+        const floor: Difficulty =
+          current === 'easy' || current === 'medium' ? 'hard' : current
+        patchSettings({ mode, difficulty: floor }, true)
+        return
       }
       patchSettings({ mode }, true)
     },
