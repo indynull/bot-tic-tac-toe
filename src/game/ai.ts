@@ -13,19 +13,17 @@ interface BoardContext {
 }
 
 /**
- * Depth limit for minimax. 3×3 stays exhaustive; 4×4 uses a shallow fixed depth.
- * 5×5+ use tactical only (minimax branching is too slow for interactive play).
+ * Depth limit for minimax. 3×3 is exhaustive (tiny tree).
+ * 4×4+ stays tactical — must keep AI response well under 1s on all boards.
  */
-function maxSearchDepth(boardSize: BoardSize, difficulty: Difficulty = 'hard'): number {
+function maxSearchDepth(boardSize: BoardSize, _difficulty: Difficulty = 'hard'): number {
   if (boardSize <= 3) return 20
-  // Hard/impossible on 4×4: 3 plies is fast and still applies pressure (depth 4–5 lagged badly).
-  if (boardSize === 4) return difficulty === 'impossible' ? 3 : 2
   return 1
 }
 
-/** 5×5+ use tactical hard/impossible (wins/blocks/forks) — minimax is too slow here. */
+/** Non-3×3 hard/impossible use tactical play only (sub-second AI budget). */
 function prefersTacticalHard(boardSize: BoardSize): boolean {
-  return boardSize >= 5
+  return boardSize >= 4
 }
 
 /** Strategic cell weights for classic 3×3: center > corners > edges. */
@@ -217,8 +215,8 @@ function optimalMoves(
 }
 
 /**
- * Hard: optimal minimax on 3×3; shallow minimax on 4×4; tactical on 5×5+.
- * Among equally optimal lines on small boards, pick randomly for variety.
+ * Hard: optimal minimax on 3×3; tactical on 4×4+ (sub-second budget).
+ * Among equally optimal lines on 3×3, pick randomly for variety.
  */
 function chooseHardMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number {
   if (prefersTacticalHard(ctx.boardSize)) {

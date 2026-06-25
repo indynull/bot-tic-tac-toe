@@ -140,7 +140,7 @@ describe('larger boards', () => {
     expect(elapsed).toBeLessThan(100)
   })
 
-  it('impossible on 4×4 stays interactive (shallow minimax)', () => {
+  it('impossible on 4×4 is tactical and sub-second', () => {
     let g = createGame({
       boardSize: 4,
       settings: { mode: 'vs_ai', humanPlayer: 'X', difficulty: 'impossible' },
@@ -152,7 +152,25 @@ describe('larger boards', () => {
     const move = chooseMove(g, 'impossible')
     const elapsed = performance.now() - t0
     expect(getLegalMoves(g)).toContain(move)
-    expect(elapsed).toBeLessThan(250)
+    expect(elapsed).toBeLessThan(100)
+  })
+
+  it('3×3 impossible chooseMove stays well under 1s', () => {
+    let g = createGame({
+      settings: { mode: 'vs_ai', humanPlayer: 'O', difficulty: 'impossible', firstPlayer: 'X' },
+    })
+    // AI opens as X on impossible defaults; time an opening + reply
+    const t0 = performance.now()
+    const open = chooseMove(g, 'impossible')
+    const r = applyMove(g, open)
+    if (!r.ok) throw new Error('setup failed')
+    g = r.state
+    // human O plays
+    const human = applyMove(g, g.board.findIndex((c) => c === null))
+    if (!human.ok) throw new Error('human setup failed')
+    g = human.state
+    chooseMove(g, 'impossible')
+    expect(performance.now() - t0).toBeLessThan(500)
   })
 
   it('medium takes an instant win on 4×4', () => {

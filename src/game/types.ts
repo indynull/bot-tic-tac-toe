@@ -133,12 +133,7 @@ export function aiPolicyNote(boardSize: BoardSize, difficulty: Difficulty): stri
     if (difficulty === 'medium') return 'Tactical (wins/blocks/forks)'
     return 'Mostly random with occasional tactics'
   }
-  if (boardSize === 4) {
-    if (difficulty === 'impossible') return 'Shallow minimax on 4×4 (depth 3; fast, not full-tree)'
-    if (difficulty === 'hard') return 'Shallow minimax on 4×4 (depth 2; fast, not full-tree)'
-    return 'Tactical play on 4×4'
-  }
-  return `Tactical play on ${boardSize}×${boardSize} (fast; not optimal search)`
+  return `Tactical play on ${boardSize}×${boardSize} (sub-second; not optimal search)`
 }
 
 export const DEFAULT_SETTINGS: Settings = {

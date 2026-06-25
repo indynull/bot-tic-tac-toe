@@ -18,36 +18,36 @@ import {
   type Theme,
 } from '../game'
 
-/**
- * Short UI delay so moves don't feel instant — kept low so hard/impossible stay responsive.
- * Compute time for minimax is separate; this is only setTimeout theater.
- */
-function aiDelayMs(difficulty: Difficulty, boardSize: number): number {
+/** Hard ceiling: human-visible AI response must stay under 1 second. */
+const AI_RESPONSE_BUDGET_MS = 800
+
+/** Minimum “thinking” theater so moves don't blink in; shrinks if search was slow. */
+function minThinkMs(difficulty: Difficulty, boardSize: number): number {
   if (boardSize > 3) {
     switch (difficulty) {
       case 'easy':
-        return 60
+        return 40
       case 'medium':
-        return 90
+        return 50
       case 'hard':
-        return 120
+        return 60
       case 'impossible':
-        return 150
+        return 80
       default:
-        return 90
+        return 50
     }
   }
   switch (difficulty) {
     case 'easy':
-      return 120
+      return 60
     case 'medium':
-      return 180
+      return 80
     case 'hard':
-      return 260
+      return 100
     case 'impossible':
-      return 320
+      return 120
     default:
-      return 200
+      return 80
   }
 }
 
@@ -96,25 +96,55 @@ export function useGameController() {
       return
     }
     setAiThinking(true)
+    const startedAt = performance.now()
+    const minThink = minThinkMs(state.settings.difficulty, state.boardSize)
+
+    // Yield one tick so “thinking” status can paint, then compute + apply within budget.
     aiTimerRef.current = setTimeout(() => {
       aiTimerRef.current = null
-      const latest = gameRef.current
-      if (!isAiTurn(latest)) {
-        setAiThinking(false)
-        return
-      }
       try {
-        const move = chooseMove(latest)
-        const result = applyMove(latest, move)
-        if (result.ok) {
-          setGame(result.state)
+        const current = gameRef.current
+        if (!isAiTurn(current)) {
+          setAiThinking(false)
+          return
+        }
+        const move = chooseMove(current)
+        const elapsed = performance.now() - startedAt
+        // Pad for a brief think feel, but never miss the sub-second budget.
+        const wait = Math.max(
+          0,
+          Math.min(minThink - elapsed, AI_RESPONSE_BUDGET_MS - elapsed),
+        )
+
+        const commit = () => {
+          try {
+            const latestBoard = gameRef.current
+            if (!isAiTurn(latestBoard)) return
+            const pick =
+              latestBoard.moveHistory.length === current.moveHistory.length
+                ? move
+                : chooseMove(latestBoard)
+            const result = applyMove(latestBoard, pick)
+            if (result.ok) setGame(result.state)
+          } catch {
+            // no legal moves
+          } finally {
+            setAiThinking(false)
+          }
+        }
+
+        if (wait <= 0) {
+          commit()
+        } else {
+          aiTimerRef.current = setTimeout(() => {
+            aiTimerRef.current = null
+            commit()
+          }, wait)
         }
       } catch {
-        // no legal moves
-      } finally {
         setAiThinking(false)
       }
-    }, aiDelayMs(state.settings.difficulty, state.boardSize))
+    }, 0)
   }, [clearAiTimer])
 
   // Trigger AI when it's their turn
