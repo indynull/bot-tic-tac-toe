@@ -36,7 +36,8 @@ export default function App() {
       <header className={appStyles.header}>
         <h1 className={appStyles.title}>Tic-Tac-Toe</h1>
         <p className={appStyles.tagline}>
-          Local PvP &amp; vs computer — try beating hard or impossible mode
+          Local PvP &amp; vs computer — draws escalate to a bigger board
+          {ctrl.game.boardSize > 3 ? ` · now ${ctrl.game.boardSize}×${ctrl.game.boardSize}` : ''}
         </p>
       </header>
 
@@ -46,6 +47,7 @@ export default function App() {
 
         <Board
           board={ctrl.game.board}
+          boardSize={ctrl.game.boardSize}
           winningLine={ctrl.game.winningLine}
           status={ctrl.game.status}
           disabled={ctrl.boardLocked}
