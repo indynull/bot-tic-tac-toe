@@ -51,15 +51,17 @@ export interface GameState {
   scores: Scores
   settings: Settings
   /**
-   * Board size for the *next* new game. Advances after a draw (up to max);
-   * wins keep the current size. Persisted as progression.boardSize.
+   * Size for the *next* new/empty game (tracks current ladder; grows with in-place expansion).
+   * Persisted as progression.boardSize.
    */
   ladderSize: BoardSize
   /**
-   * True when this game ended in a draw that advanced the ladder.
-   * Cleared on new game / undo. Used for status copy and a11y.
+   * True for one announcement cycle after an in-place board growth.
+   * Cleared on the next move, undo, or new game.
    */
-  ladderAdvanced: boolean
+  justGrew: boolean
+  /** Board size before the most recent in-place growth (status copy); null if never grew this session. */
+  previousBoardSize: BoardSize | null
 }
 
 export type MoveErrorReason =

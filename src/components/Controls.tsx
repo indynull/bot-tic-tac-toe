@@ -58,9 +58,7 @@ export function Controls({
 
       <div className={styles.actions}>
         <button type="button" className={styles.primary} onClick={onNewGame}>
-          {game.ladderAdvanced && game.ladderSize > game.boardSize
-            ? `New game (${game.ladderSize}×${game.ladderSize})`
-            : 'New game'}
+          New game
         </button>
         <button type="button" onClick={onUndo} disabled={!canUndo}>
           Undo

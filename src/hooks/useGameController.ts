@@ -77,12 +77,12 @@ export function useGameController() {
     }
   }, [])
 
-  // Persist scores, settings, and ladder size (next new game)
+  // Persist scores, settings, and ladder size (current / next empty game)
   useEffect(() => {
     savePersisted(game.scores, game.settings, {
-      boardSize: game.ladderSize,
+      boardSize: game.boardSize,
     })
-  }, [game.scores, game.settings, game.ladderSize])
+  }, [game.scores, game.settings, game.boardSize])
 
   // Apply theme to document
   useEffect(() => {

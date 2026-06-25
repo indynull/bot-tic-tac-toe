@@ -5,6 +5,9 @@ import {
   embedBoard,
   evaluateBoard,
   getLegalMoves,
+  growBoardInPlace,
+  hasImmediateWin,
+  planBoardGrowth,
   remapIndex,
   resetGame,
   resetScores,
@@ -14,7 +17,7 @@ import {
   WIN_LINES,
 } from '../src/game'
 
-/** Classic 3×3 full-board draw sequence (no 3-in-a-row). */
+/** Classic 3×3 full-board sequence with no 3-in-a-row (triggers growth). */
 const CLASSIC_DRAW_MOVES = [0, 1, 2, 4, 3, 6, 5, 8, 7] as const
 
 function playMoves(start = createGame(), moves: readonly number[] = CLASSIC_DRAW_MOVES) {
@@ -40,7 +43,8 @@ describe('createGame', () => {
     expect(g.moveHistory).toEqual([])
     expect(g.scores).toEqual({ X: 0, O: 0, draws: 0 })
     expect(g.ladderSize).toBe(3)
-    expect(g.ladderAdvanced).toBe(false)
+    expect(g.justGrew).toBe(false)
+    expect(g.previousBoardSize).toBeNull()
   })
 
   it('supports custom board sizes with scaled win length', () => {
@@ -132,15 +136,20 @@ describe('win detection', () => {
   )
 })
 
-describe('draw detection', () => {
-  it('ends as a draw on classic 3×3 full board and advances the ladder', () => {
+describe('draw detection / in-place growth', () => {
+  it('grows in place on classic 3×3 full board instead of scoring a draw', () => {
     const g = playMoves()
-    expect(g.status).toBe('draw')
-    expect(g.boardSize).toBe(3)
-    expect(g.board).toHaveLength(9)
-    expect(g.scores.draws).toBe(1)
-    expect(g.ladderAdvanced).toBe(true)
+    expect(g.status).toBe('in_progress')
+    expect(g.boardSize).toBe(4)
+    expect(g.winLength).toBe(4)
+    expect(g.board).toHaveLength(16)
+    expect(g.scores.draws).toBe(0)
+    expect(g.justGrew).toBe(true)
+    expect(g.previousBoardSize).toBe(3)
     expect(g.ladderSize).toBe(4)
+    // Top-left embed keeps marks
+    expect(g.board[0]).toBe('X')
+    expect(g.board[1]).toBe('O')
   })
 })
 
@@ -151,48 +160,53 @@ describe('board embed helpers', () => {
     expect(big).toHaveLength(16)
     expect(big[0]).toBe('X')
     expect(big[1]).toBe('O')
-    expect(big[4]).toBeNull() // new column on row 0
-    expect(big[5]).toBe('X') // old index 4 → row1 col1 on 4×4
+    expect(big[4]).toBeNull()
+    expect(big[5]).toBe('X')
     expect(big[15]).toBeNull()
   })
 
   it('remapIndex preserves row/col under top-left embed', () => {
-    expect(remapIndex(4, 3, 4)).toBe(5) // (1,1) on 3×3 → (1,1) on 4×4 = 5
-    expect(remapIndex(8, 3, 5)).toBe(12) // (2,2) → 2*5+2 = 12
+    expect(remapIndex(4, 3, 4)).toBe(5)
+    expect(remapIndex(8, 3, 5)).toBe(12)
+  })
+
+  it('planBoardGrowth prefers +1 when next player cannot win immediately', () => {
+    const board = ['X', 'O', 'X', 'X', 'O', 'O', 'O', 'X', 'X'] as ('X' | 'O' | null)[]
+    const plan = planBoardGrowth(board, 3, 'O')
+    expect(plan.grew).toBe(true)
+    expect(plan.boardSize).toBe(4)
+    expect(hasImmediateWin(plan.board, 4, 4, 'O')).toBe(false)
   })
 })
 
-describe('draw ladder (next-game escalation)', () => {
-  it('advances ladder 3→4 and bumps AI difficulty on vs_ai draw', () => {
+describe('in-place board growth', () => {
+  it('grows 3×3 → 4×4 and bumps AI difficulty (vs AI)', () => {
     const g = playMoves(createGame({ settings: { mode: 'vs_ai', difficulty: 'easy' } }))
-    expect(g.status).toBe('draw')
-    expect(g.boardSize).toBe(3)
-    expect(g.ladderSize).toBe(4)
-    expect(g.ladderAdvanced).toBe(true)
+    expect(g.status).toBe('in_progress')
+    expect(g.boardSize).toBe(4)
     expect(g.settings.difficulty).toBe('medium')
-    expect(g.scores.draws).toBe(1)
+    expect(g.currentPlayer).toBe('O')
+    expect(g.scores.draws).toBe(0)
   })
 
-  it('advances ladder in PvP without changing difficulty', () => {
+  it('grows in PvP without changing difficulty', () => {
     const g = playMoves(createGame({ settings: { mode: 'local_pvp', difficulty: 'easy' } }))
-    expect(g.status).toBe('draw')
-    expect(g.ladderSize).toBe(4)
+    expect(g.boardSize).toBe(4)
     expect(g.settings.difficulty).toBe('easy')
+    expect(g.status).toBe('in_progress')
   })
 
-  it('new game starts empty at advanced ladder size', () => {
+  it('new game keeps ladder size (empty board at grown N)', () => {
     let g = playMoves(createGame({ settings: { mode: 'vs_ai', difficulty: 'easy' } }))
-    expect(g.ladderSize).toBe(4)
+    expect(g.boardSize).toBe(4)
     g = resetGame(g, { preserveScores: true, preserveSettings: true })
     expect(g.boardSize).toBe(4)
-    expect(g.winLength).toBe(4)
     expect(g.board.every((c) => c === null)).toBe(true)
-    expect(g.status).toBe('in_progress')
-    expect(g.ladderAdvanced).toBe(false)
+    expect(g.justGrew).toBe(false)
     expect(g.settings.difficulty).toBe('medium')
   })
 
-  it('win does not advance the ladder', () => {
+  it('win does not grow the board', () => {
     let g = createGame({ settings: { mode: 'vs_ai', difficulty: 'easy' } })
     for (const idx of [0, 3, 1, 4, 2]) {
       const r = applyMove(g, idx)
@@ -201,12 +215,10 @@ describe('draw ladder (next-game escalation)', () => {
     }
     expect(g.status).toBe('won')
     expect(g.boardSize).toBe(3)
-    expect(g.ladderSize).toBe(3)
-    expect(g.ladderAdvanced).toBe(false)
     expect(g.settings.difficulty).toBe('easy')
   })
 
-  it('draw at 7×7 counts but does not advance past max', () => {
+  it('records a real draw at 7×7 when full with no 5-in-a-row', () => {
     const size = 7 as const
     const pattern = ['X', 'X', 'X', 'X', 'O', 'O', 'O'] as const
     const board: ('X' | 'O' | null)[] = Array(49).fill(null)
@@ -233,57 +245,19 @@ describe('draw ladder (next-game escalation)', () => {
     expect(r.state.boardSize).toBe(7)
     expect(r.state.status).toBe('draw')
     expect(r.state.scores.draws).toBe(1)
-    expect(r.state.ladderSize).toBe(7)
-    expect(r.state.ladderAdvanced).toBe(false)
+    expect(r.state.justGrew).toBe(false)
   })
 
-  it('draw on 4×4 advances ladder and tiers-up difficulty (pressure keeps climbing)', () => {
-    let g = createGame({ boardSize: 4, settings: { mode: 'vs_ai', difficulty: 'medium' } })
-    // Fill without 4-in-a-row if possible; use alternating pattern
-    const board: ('X' | 'O' | null)[] = Array(16).fill(null)
-    for (let i = 0; i < 15; i++) board[i] = i % 2 === 0 ? 'X' : 'O'
-    board[15] = null
-    const outcome15 = evaluateBoard([...board.slice(0, 15), 'O'], 4, 4)
-    g = {
-      ...g,
-      board,
-      currentPlayer: 'O',
-      moveHistory: board
-        .map((p, i) => (p ? { cellIndex: i, player: p } : null))
-        .filter((m): m is { cellIndex: number; player: 'X' | 'O' } => m !== null),
-    }
-    const r = applyMove(g, 15)
-    expect(r.ok).toBe(true)
-    if (!r.ok) return
-    if (outcome15.status === 'draw') {
-      expect(r.state.status).toBe('draw')
-      expect(r.state.ladderSize).toBe(5)
-      expect(r.state.settings.difficulty).toBe('hard')
-    } else {
-      // Pattern might win for O — still valid board rules
-      expect(['won', 'draw']).toContain(r.state.status)
-    }
-  })
-
-  it('undo after draw reverts ladder and score', () => {
+  it('undo after growth is size-sticky', () => {
     let g = playMoves()
-    expect(g.status).toBe('draw')
-    expect(g.ladderSize).toBe(4)
-    expect(g.scores.draws).toBe(1)
+    expect(g.boardSize).toBe(4)
+    expect(g.justGrew).toBe(true)
+    const beforeUndo = g.moveHistory.length
     g = undoMove(g)
+    expect(g.boardSize).toBe(4)
+    expect(g.moveHistory.length).toBe(beforeUndo - 1)
+    expect(g.justGrew).toBe(false)
     expect(g.status).toBe('in_progress')
-    expect(g.boardSize).toBe(3)
-    expect(g.ladderSize).toBe(3)
-    expect(g.ladderAdvanced).toBe(false)
-    expect(g.scores.draws).toBe(0)
-  })
-
-  it('undo after vs_ai draw also reverts difficulty tier', () => {
-    let g = playMoves(createGame({ settings: { mode: 'vs_ai', difficulty: 'easy' } }))
-    expect(g.settings.difficulty).toBe('medium')
-    g = undoMove(g)
-    expect(g.settings.difficulty).toBe('easy')
-    expect(g.ladderSize).toBe(3)
   })
 
   it('resetProgression returns to 3×3', () => {
@@ -291,7 +265,18 @@ describe('draw ladder (next-game escalation)', () => {
     g = resetGame(g, { resetProgression: true })
     expect(g.boardSize).toBe(3)
     expect(g.ladderSize).toBe(3)
-    expect(g.ladderAdvanced).toBe(false)
+    expect(g.justGrew).toBe(false)
+  })
+
+  it('growBoardInPlace remaps move history indices', () => {
+    let g = createGame()
+    const r = applyMove(g, 4)
+    if (!r.ok) return
+    g = r.state
+    g = growBoardInPlace(g, 4)
+    expect(g.boardSize).toBe(4)
+    expect(g.moveHistory[0]!.cellIndex).toBe(5)
+    expect(g.board[5]).toBe('X')
   })
 
   it('detects 4-in-a-row on a 4×4 board', () => {
@@ -306,7 +291,6 @@ describe('draw ladder (next-game escalation)', () => {
     expect(g.status).toBe('won')
     expect(g.winner).toBe('X')
     expect(g.winningLine).toEqual([0, 1, 2, 3])
-    expect(g.ladderSize).toBe(4)
   })
 
   it('detects diagonal win on 5×5 with 4-in-a-row', () => {
@@ -322,10 +306,9 @@ describe('draw ladder (next-game escalation)', () => {
     expect(g.winner).toBe('X')
   })
 
-  it('resolveEscalation uses ladderSize for next game', () => {
-    const drawn = playMoves()
-    const planned = resolveEscalation(drawn)
-    expect(planned.boardSize).toBe(4)
+  it('resolveEscalation keeps grown ladder size', () => {
+    const grown = playMoves()
+    expect(resolveEscalation(grown).boardSize).toBe(4)
     const mid = createGame({ boardSize: 5 })
     expect(resolveEscalation(mid).boardSize).toBe(5)
   })

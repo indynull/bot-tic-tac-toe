@@ -39,7 +39,7 @@ export default function App() {
           Local PvP &amp; vs computer
           {ctrl.game.boardSize > 3
             ? ` · ${ctrl.game.boardSize}×${ctrl.game.boardSize}, ${ctrl.game.winLength} in a row`
-            : ' · draws unlock a bigger board next game'}
+            : ' · full boards grow in place (marks kept)'}
         </p>
       </header>
 

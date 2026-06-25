@@ -26,35 +26,32 @@ function boardPrefix(game: GameState): string {
 export function getStatusMessage(game: GameState, aiThinking: boolean): string {
   if (aiThinking) return aiThinkingMessage(game.settings.difficulty)
 
+  if (game.justGrew && game.previousBoardSize != null) {
+    const from = game.previousBoardSize
+    const to = game.boardSize
+    const tier =
+      game.settings.mode === 'vs_ai' ? ` · AI ${game.settings.difficulty}` : ''
+    return `Board grew ${from}×${from} → ${to}×${to} (marks kept; ${winRuleLabel(to)} now)${tier} — ${game.currentPlayer}'s turn`
+  }
+
   if (game.status === 'won' && game.winner) {
-    const stay =
-      game.boardSize > 3
-        ? ` · still ${game.boardSize}×${game.boardSize} next game`
-        : ''
     if (game.settings.mode === 'vs_ai') {
       const humanWon = game.winner === game.settings.humanPlayer
-      if (humanWon) return `You win! (${game.winner})${stay}`
+      if (humanWon) return `You win! (${game.winner})`
       if (game.settings.difficulty === 'impossible') {
-        return `Computer wins — as expected. (${game.winner})${stay}`
+        return `Computer wins — as expected. (${game.winner})`
       }
       if (game.settings.difficulty === 'hard') {
-        return `Computer wins — hard mode doesn't miss. (${game.winner})${stay}`
+        return `Computer wins — hard mode doesn't miss. (${game.winner})`
       }
-      return `Computer wins! (${game.winner})${stay}`
+      return `Computer wins! (${game.winner})`
     }
-    return `${game.winner} wins!${stay}`
+    return `${game.winner} wins!`
   }
 
   if (game.status === 'draw') {
-    if (game.ladderAdvanced && game.ladderSize > game.boardSize) {
-      const tier =
-        game.settings.mode === 'vs_ai'
-          ? ` · AI now ${game.settings.difficulty}`
-          : ''
-      return `Draw — next game is ${game.ladderSize}×${game.ladderSize} (${winRuleLabel(game.ladderSize)})${tier}. Tap New game.`
-    }
     if (game.boardSize >= MAX_BOARD_SIZE) {
-      return "It's a draw — max board (7×7); ladder stays here"
+      return "It's a draw — max board (7×7); no further growth"
     }
     return "It's a draw"
   }
@@ -79,7 +76,7 @@ export function StatusBar({ game, aiThinking }: StatusBarProps) {
   const message = getStatusMessage(game, aiThinking)
   const tone =
     game.status === 'won' ? styles.won : game.status === 'draw' ? styles.draw : styles.progress
-  const live = game.ladderAdvanced ? 'assertive' : 'polite'
+  const live = game.justGrew ? 'assertive' : 'polite'
 
   return (
     <div className={`${styles.status} ${tone}`} role="status" aria-live={live} aria-atomic="true">

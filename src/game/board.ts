@@ -1,5 +1,5 @@
 import type { BoardSize, Cell, Player } from './types'
-import { DEFAULT_BOARD_SIZE, WIN_LINES } from './types'
+import { DEFAULT_BOARD_SIZE, MAX_BOARD_SIZE, WIN_LINES, winLengthForBoard } from './types'
 
 /** @deprecated Prefer boardSize² from game state; kept for 3×3 compatibility. */
 export const BOARD_SIZE = 9
@@ -178,4 +178,47 @@ export function hasImmediateWin(
     if (evaluateBoard(after, boardSize, winLength).winner === player) return true
   }
   return false
+}
+
+export interface GrowPlan {
+  boardSize: BoardSize
+  winLength: number
+  board: Cell[]
+  grew: boolean
+}
+
+/**
+ * Plan in-place growth so play can continue after a would-be draw.
+ * Tries +1 first; skips sizes where the player about to move would win immediately.
+ */
+export function planBoardGrowth(
+  board: Cell[],
+  boardSize: BoardSize,
+  nextPlayer: Player,
+): GrowPlan {
+  if (boardSize >= MAX_BOARD_SIZE) {
+    return {
+      boardSize,
+      winLength: winLengthForBoard(boardSize),
+      board: board.slice(),
+      grew: false,
+    }
+  }
+
+  for (let size = boardSize + 1; size <= MAX_BOARD_SIZE; size++) {
+    const candidate = size as BoardSize
+    const winLength = winLengthForBoard(candidate)
+    const grown = embedBoard(board, boardSize, candidate)
+    const outcome = evaluateBoard(grown, candidate, winLength)
+    if (outcome.status === 'won') continue
+    if (hasImmediateWin(grown, candidate, winLength, nextPlayer)) continue
+    return { boardSize: candidate, winLength, board: grown, grew: true }
+  }
+
+  return {
+    boardSize,
+    winLength: winLengthForBoard(boardSize),
+    board: board.slice(),
+    grew: false,
+  }
 }

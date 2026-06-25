@@ -70,9 +70,9 @@ export function SettingsModal({
           {settings.mode === 'vs_ai' && (
             <p className={styles.hint} role="note">
               AI strength: {aiPolicyNote(boardSize, settings.difficulty)}. Hard/impossible are
-              optimal only on 3×3; larger boards use fast tactical play so replies stay under 1s. A
-              draw unlocks a larger empty board next game and tiers difficulty up one step (if not
-              already impossible).
+              optimal only on 3×3; larger boards use fast tactical play so replies stay under 1s.
+              Full boards grow in place (marks kept, new empty ring) until 7×7; vs-AI tiers up one
+              step on growth when possible.
             </p>
           )}
 

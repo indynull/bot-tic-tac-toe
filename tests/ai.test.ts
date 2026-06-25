@@ -300,14 +300,13 @@ describe('status messages', () => {
     expect(getStatusMessage(g, false)).toContain('max board')
   })
 
-  it('announces ladder advance after a draw', () => {
+  it('announces in-place growth via justGrew status copy', () => {
     const g = {
-      ...createGame({ boardSize: 3, settings: { mode: 'local_pvp' } }),
-      status: 'draw' as const,
-      ladderSize: 4 as const,
-      ladderAdvanced: true,
+      ...createGame({ boardSize: 4, settings: { mode: 'local_pvp' } }),
+      justGrew: true,
+      previousBoardSize: 3 as const,
     }
-    expect(getStatusMessage(g, false)).toContain('next game is 4×4')
+    expect(getStatusMessage(g, false)).toContain('Board grew 3×3 → 4×4')
   })
 
   it('uses deeper thinking copy on hard while AI thinks', () => {

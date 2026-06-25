@@ -256,7 +256,7 @@ function openingBookMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): nu
 
 /**
  * Impossible: optimal minimax + deterministic tie-breaks + opening book on 3×3.
- * Shallow minimax on 4×4; deterministic tactical on 5×5+ (fast, no gifts).
+ * Deterministic tactical on 4×4+ (fast, no gifts; keeps replies under 1s).
  */
 function chooseImpossibleMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number {
   if (prefersTacticalHard(ctx.boardSize)) {
