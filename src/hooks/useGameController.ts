@@ -57,7 +57,6 @@ function initialState(): GameState {
     scores,
     settings,
     boardSize: progression.boardSize,
-    pendingEscalation: progression.pendingEscalation,
   })
 }
 
@@ -76,13 +75,12 @@ export function useGameController() {
     }
   }, [])
 
-  // Persist scores, settings, and draw-escalation progression
+  // Persist scores, settings, and ladder board size
   useEffect(() => {
     savePersisted(game.scores, game.settings, {
       boardSize: game.boardSize,
-      pendingEscalation: game.pendingEscalation,
     })
-  }, [game.scores, game.settings, game.boardSize, game.pendingEscalation])
+  }, [game.scores, game.settings, game.boardSize])
 
   // Apply theme to document
   useEffect(() => {
@@ -147,10 +145,8 @@ export function useGameController() {
   const newGame = useCallback(() => {
     clearAiTimer()
     setAiThinking(false)
-    // Only explicit New game consumes pending draw escalation
-    setGame((g) =>
-      resetGame(g, { preserveScores: true, preserveSettings: true, applyEscalation: true }),
-    )
+    // New empty board at current ladder size (growth happens in-place during play)
+    setGame((g) => resetGame(g, { preserveScores: true, preserveSettings: true }))
   }, [clearAiTimer])
 
   const doResetScores = useCallback(() => {
@@ -178,11 +174,9 @@ export function useGameController() {
       setGame((g) => {
         const next = updateSettings(g, partial)
         if (restartGame || partial.mode !== undefined || partial.firstPlayer !== undefined || partial.humanPlayer !== undefined) {
-          // Settings/mode restart must NOT consume draw escalation
           return resetGame(next, {
             preserveScores: true,
             preserveSettings: true,
-            applyEscalation: false,
           })
         }
         return next

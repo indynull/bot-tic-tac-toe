@@ -1,9 +1,12 @@
-import type { Player, Settings, Theme } from '../game'
+import type { BoardSize, Player, Settings, Theme } from '../game'
+import { aiPolicyNote } from '../game'
 import styles from '../styles/SettingsModal.module.css'
 
 interface SettingsModalProps {
   open: boolean
   settings: Settings
+  /** Current ladder size — AI labels are only fully accurate on 3×3. */
+  boardSize?: BoardSize
   onClose: () => void
   onFirstPlayer: (p: Player) => void
   onHumanPlayer: (p: Player) => void
@@ -14,6 +17,7 @@ interface SettingsModalProps {
 export function SettingsModal({
   open,
   settings,
+  boardSize = 3,
   onClose,
   onFirstPlayer,
   onHumanPlayer,
@@ -61,6 +65,14 @@ export function SettingsModal({
                 <option value="O">O (computer may open)</option>
               </select>
             </label>
+          )}
+
+          {settings.mode === 'vs_ai' && (
+            <p className={styles.hint} role="note">
+              AI strength: {aiPolicyNote(boardSize, settings.difficulty)}. Hard/impossible are
+              optimal only on 3×3; on 4×4+ the engine uses shallow/tactical play for speed. Full
+              boards grow in place (marks kept, top-left embed) instead of ending in a draw.
+            </p>
           )}
 
           <label className={styles.field}>

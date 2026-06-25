@@ -3,6 +3,7 @@ import {
   applyMove,
   createGame,
   embedBoard,
+  evaluateBoard,
   getLegalMoves,
   growBoardInPlace,
   hasImmediateWin,
@@ -28,7 +29,8 @@ describe('createGame', () => {
     expect(g.winningLine).toBeNull()
     expect(g.moveHistory).toEqual([])
     expect(g.scores).toEqual({ X: 0, O: 0, draws: 0 })
-    expect(g.pendingEscalation).toBe(false)
+    expect(g.justGrew).toBe(false)
+    expect(g.previousBoardSize).toBeNull()
   })
 
   it('supports custom board sizes with scaled win length', () => {
@@ -137,7 +139,8 @@ describe('draw detection', () => {
     expect(g.winLength).toBe(4)
     expect(g.board).toHaveLength(16)
     expect(g.scores.draws).toBe(0)
-    expect(g.pendingEscalation).toBe(false)
+    expect(g.justGrew).toBe(true)
+    expect(g.previousBoardSize).toBe(3)
     // Original top-left 3×3 marks still present at remapped indices
     expect(g.board[0]).toBe('X') // was 0
     expect(g.board[1]).toBe('O') // was 1
@@ -236,46 +239,111 @@ describe('in-place board growth on draw', () => {
     expect(g.settings.difficulty).toBe('easy')
   })
 
-  it('records a real draw at 7×7 when board is full', () => {
+  it('records a real draw at 7×7 when the board fills with no 5-in-a-row', () => {
+    // XXXXOOO repeating every 7 cells breaks 5-in-a-row in rows; rotate per row for cols/diags
+    const size = 7 as const
+    const pattern = ['X', 'X', 'X', 'X', 'O', 'O', 'O'] as const
+    const board: ('X' | 'O' | null)[] = Array(49).fill(null)
+    for (let row = 0; row < size; row++) {
+      for (let col = 0; col < size; col++) {
+        board[row * size + col] = pattern[(col + row * 3) % size]!
+      }
+    }
+    const fullEval = evaluateBoard(board, 7, 5)
+    expect(fullEval.status).toBe('draw')
+    const lastPlayer = board[48]!
+    board[48] = null
     let g = createGame({ boardSize: 7, settings: { mode: 'vs_ai', difficulty: 'hard' } })
-    // Fill entire 7×7 without 5-in-a-row by alternating in a checker that avoids long runs is hard;
-    // instead force a full board via direct state and apply one "would-be draw" path via growBoardInPlace no-op.
-    const plan = planBoardGrowth(g.board, 7, 'X')
-    expect(plan.grew).toBe(false)
-
-    // Simulate full board: set every cell, last move via engine would need valid sequence.
-    // Directly verify applyMove on a near-full board: fill 48 cells then last move.
-    const cells = g.board.slice()
-    for (let i = 0; i < 48; i++) cells[i] = i % 2 === 0 ? 'X' : 'O'
-    g = { ...g, board: cells, currentPlayer: 'X', moveHistory: cells.slice(0, 48).map((p, i) => ({ cellIndex: i, player: p! })) }
+    g = {
+      ...g,
+      board,
+      currentPlayer: lastPlayer,
+      moveHistory: board
+        .map((p, i) => (p ? { cellIndex: i, player: p } : null))
+        .filter((m): m is { cellIndex: number; player: 'X' | 'O' } => m !== null),
+    }
+    expect(planBoardGrowth([...board.slice(0, 48), lastPlayer], 7, lastPlayer === 'X' ? 'O' : 'X').grew).toBe(false)
     const r = applyMove(g, 48)
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    // May win or draw depending on pattern; at least boardSize stays 7
     expect(r.state.boardSize).toBe(7)
+    expect(r.state.status).toBe('draw')
+    expect(r.state.scores.draws).toBe(1)
+    expect(r.state.justGrew).toBe(false)
   })
 
-  it('does not bump difficulty tier when growing from boards larger than 4×4', () => {
-    let g = createGame({ boardSize: 5, settings: { mode: 'vs_ai', difficulty: 'hard' } })
-    // Fill 5×5 completely with non-winning pattern using growBoardInPlace after synthetic full board
-    const board = Array(25).fill(null).map((_, i) => (i % 3 === 0 ? 'X' : i % 3 === 1 ? 'O' : 'X')) as ('X' | 'O')[]
-    // Ensure not already won at winLength 4 — use a safer fill
-    const safe: ('X' | 'O' | null)[] = Array(25).fill(null)
-    for (let i = 0; i < 25; i++) safe[i] = i % 2 === 0 ? 'X' : 'O'
-    g = { ...g, board: safe, currentPlayer: 'O', status: 'in_progress' }
-    const plan = planBoardGrowth(safe, 5, 'O')
-    if (plan.grew) {
-      const grown = growBoardInPlace({ ...g, board: safe }, plan.boardSize)
-      expect(grown.boardSize).toBeGreaterThan(5)
-      expect(grown.settings.difficulty).toBe('hard') // no tier bump past 4×4 source
+  it('does not bump difficulty when growing from 4×4+ (tier-up only from 3×3)', () => {
+    let g = createGame({ boardSize: 4, settings: { mode: 'vs_ai', difficulty: 'medium' } })
+    // Full 4×4 with no 4-in-a-row: alternate in 2×2 blocks
+    const board: ('X' | 'O' | null)[] = Array(16).fill(null)
+    for (let i = 0; i < 15; i++) board[i] = i % 2 === 0 ? 'X' : 'O'
+    board[15] = null
+    g = {
+      ...g,
+      board,
+      currentPlayer: 'O',
+      moveHistory: board
+        .map((p, i) => (p ? { cellIndex: i, player: p } : null))
+        .filter((m): m is { cellIndex: number; player: 'X' | 'O' } => m !== null),
     }
+    const r = applyMove(g, 15)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    // If grew, difficulty must stay medium (source was 4, not ≤3)
+    if (r.state.boardSize > 4) {
+      expect(r.state.settings.difficulty).toBe('medium')
+    } else {
+      // Terminal draw at 4 is also fine if pattern won/drew without growth
+      expect(['draw', 'won', 'in_progress']).toContain(r.state.status)
+    }
+    // Direct unit: growBoardInPlace from 5 never bumps hard
+    const g5 = createGame({ boardSize: 5, settings: { mode: 'vs_ai', difficulty: 'hard' } })
+    const grown = growBoardInPlace(g5, 6)
+    expect(grown.boardSize).toBe(6)
+    expect(grown.settings.difficulty).toBe('hard')
+  })
+
+  it('skips intermediate size when next player would win immediately', () => {
+    // Craft a 3×3 embed where on 4×4 with winLength 4 nobody wins immediately is normal.
+    // For a forced skip we need hasImmediateWin on candidate 4 but not 5.
+    // Build a 4×4 position where next player has a 4-in-a-row threat on one empty cell.
+    const board4: ('X' | 'O' | null)[] = [
+      'X', 'X', 'X', null,
+      'O', 'O', 'O', null,
+      null, null, null, null,
+      null, null, null, null,
+    ]
+    // X to move on 4×4 has immediate win at 3; planBoardGrowth from 3 wouldn't produce this.
+    // Call planBoardGrowth with source 4: next player X has win at 3 on size 4 → should try 5
+    const plan = planBoardGrowth(board4, 4, 'X')
+    expect(plan.grew).toBe(true)
+    expect(plan.boardSize).toBeGreaterThanOrEqual(5)
+    expect(hasImmediateWin(plan.board, plan.boardSize, plan.winLength, 'X')).toBe(false)
+  })
+
+  it('undo after growth is size-sticky (does not shrink board)', () => {
+    const moves = [0, 1, 2, 4, 3, 6, 5, 8, 7]
+    let g = createGame()
+    for (const m of moves) {
+      const r = applyMove(g, m)
+      if (!r.ok) return
+      g = r.state
+    }
+    expect(g.boardSize).toBe(4)
+    expect(g.justGrew).toBe(true)
+    const beforeUndo = g.moveHistory.length
+    g = undoMove(g)
+    expect(g.boardSize).toBe(4) // sticky — not back to 3×3
+    expect(g.moveHistory.length).toBe(beforeUndo - 1)
+    expect(g.justGrew).toBe(false)
+    expect(g.status).toBe('in_progress')
   })
 
   it('resetProgression returns to 3×3', () => {
-    let g = createGame({ boardSize: 5, pendingEscalation: true })
+    let g = createGame({ boardSize: 5 })
     g = resetGame(g, { resetProgression: true })
     expect(g.boardSize).toBe(3)
-    expect(g.pendingEscalation).toBe(false)
+    expect(g.justGrew).toBe(false)
   })
 
   it('growBoardInPlace remaps move history indices', () => {

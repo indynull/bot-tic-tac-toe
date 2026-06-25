@@ -22,7 +22,6 @@ import {
   DEFAULT_BOARD_SIZE,
   DEFAULT_SCORES,
   DEFAULT_SETTINGS,
-  MAX_BOARD_SIZE,
   nextDifficulty,
   shouldEscalateDifficulty,
   winLengthForBoard,
@@ -32,21 +31,14 @@ export interface CreateGameOptions {
   settings?: Partial<Settings>
   scores?: Scores
   boardSize?: BoardSize
-  pendingEscalation?: boolean
 }
 
 export interface ResetGameOptions {
   preserveScores?: boolean
   preserveSettings?: boolean
   settings?: Partial<Settings>
-  /** Force a specific board size (skips draw-escalation logic). */
+  /** Force a specific board size for the new empty game. */
   boardSize?: BoardSize
-  /**
-   * When true, apply pending draw escalation (bigger board + harder AI).
-   * Default: **false** — only explicit "New game" should pass true so theme/settings
-   * changes don't consume an escalation token.
-   */
-  applyEscalation?: boolean
   /** Reset ladder back to classic 3×3 (e.g. reset scores / user opt-out). */
   resetProgression?: boolean
 }
@@ -84,27 +76,29 @@ export function createGame(options: CreateGameOptions = {}): GameState {
     moveHistory: [],
     scores,
     settings,
-    pendingEscalation: options.pendingEscalation ?? false,
+    justGrew: false,
+    previousBoardSize: null,
   }
 }
 
 /**
- * Apply an in-place board growth: embed marks, remap history, optionally bump AI tier.
+ * Apply an in-place board growth: embed marks (top-left), remap history, optionally bump AI tier.
  * Game stays in progress; next player moves on the larger board.
+ * Undo after growth is size-sticky (stays on large board; does not shrink back).
  */
 export function growBoardInPlace(state: GameState, toSize: BoardSize): GameState {
   if (toSize <= state.boardSize) return state
+  const fromSize = state.boardSize
   const winLength = winLengthForBoard(toSize)
-  const board = embedBoard(state.board, state.boardSize, toSize)
+  const board = embedBoard(state.board, fromSize, toSize)
   const moveHistory = state.moveHistory.map((m) => ({
     ...m,
-    cellIndex: remapIndex(m.cellIndex, state.boardSize, toSize),
+    cellIndex: remapIndex(m.cellIndex, fromSize, toSize),
   }))
   let settings = state.settings
-  if (settings.mode === 'vs_ai' && shouldEscalateDifficulty(state.boardSize)) {
+  if (settings.mode === 'vs_ai' && shouldEscalateDifficulty(fromSize)) {
     settings = { ...settings, difficulty: nextDifficulty(settings.difficulty) }
   }
-  const atMax = toSize >= MAX_BOARD_SIZE
   return {
     ...state,
     boardSize: toSize,
@@ -115,8 +109,8 @@ export function growBoardInPlace(state: GameState, toSize: BoardSize): GameState
     status: 'in_progress',
     winner: null,
     winningLine: null,
-    // Only block further growth once we hit the ceiling
-    pendingEscalation: atMax ? false : state.pendingEscalation,
+    justGrew: true,
+    previousBoardSize: fromSize,
   }
 }
 
@@ -142,29 +136,19 @@ export function applyMove(state: GameState, cellIndex: number): ApplyMoveResult 
     const nextPlayer = opponent(player)
     const plan = planBoardGrowth(board, state.boardSize, nextPlayer)
     if (plan.grew) {
-      const grownHistory = moveHistory.map((m) => ({
-        ...m,
-        cellIndex: remapIndex(m.cellIndex, state.boardSize, plan.boardSize),
-      }))
-      let settings = state.settings
-      if (settings.mode === 'vs_ai' && shouldEscalateDifficulty(state.boardSize)) {
-        settings = { ...settings, difficulty: nextDifficulty(settings.difficulty) }
+      const withMove: GameState = {
+        ...state,
+        board,
+        moveHistory,
+        justGrew: false,
       }
+      const grown = growBoardInPlace(withMove, plan.boardSize)
       return {
         ok: true,
         state: {
-          ...state,
-          boardSize: plan.boardSize,
-          winLength: plan.winLength,
-          board: plan.board,
+          ...grown,
           currentPlayer: nextPlayer,
-          status: 'in_progress',
-          winner: null,
-          winningLine: null,
-          moveHistory: grownHistory,
           scores: state.scores,
-          settings,
-          pendingEscalation: false,
         },
       }
     }
@@ -181,7 +165,7 @@ export function applyMove(state: GameState, cellIndex: number): ApplyMoveResult 
         winningLine: null,
         moveHistory,
         scores,
-        pendingEscalation: state.boardSize >= MAX_BOARD_SIZE,
+        justGrew: false,
       },
     }
   }
@@ -202,7 +186,7 @@ export function applyMove(state: GameState, cellIndex: number): ApplyMoveResult 
       winningLine: outcome.winningLine,
       moveHistory,
       scores,
-      pendingEscalation: state.pendingEscalation,
+      justGrew: false,
     },
   }
 }
@@ -239,7 +223,6 @@ export function resetGame(state: GameState, options: ResetGameOptions = {}): Gam
     settings,
     scores: preserveScores ? cloneScores(state.scores) : { ...DEFAULT_SCORES },
     boardSize,
-    pendingEscalation: false,
   })
 }
 
@@ -279,6 +262,7 @@ export function undoMove(state: GameState): GameState {
     scores.draws = Math.max(0, scores.draws - 1)
   }
 
+  // Size is sticky: undo never shrinks a board that grew in place
   return {
     ...state,
     board,
@@ -288,7 +272,7 @@ export function undoMove(state: GameState): GameState {
     winningLine: outcome.winningLine,
     moveHistory: history,
     scores,
-    pendingEscalation: false,
+    justGrew: false,
   }
 }
 
