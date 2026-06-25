@@ -97,7 +97,7 @@ describe('larger boards', () => {
     expect(legal).toContain(move)
   })
 
-  it('hard/impossible on 5×5 return quickly (limited minimax, not full tree)', () => {
+  it('hard/impossible on 5×5 return quickly (tactical only)', () => {
     let g = createGame({
       boardSize: 5,
       settings: { mode: 'vs_ai', humanPlayer: 'X', difficulty: 'impossible' },
@@ -109,11 +109,10 @@ describe('larger boards', () => {
     const move = chooseMove(g, 'impossible')
     const elapsed = performance.now() - t0
     expect(getLegalMoves(g)).toContain(move)
-    // Limited minimax on 5×5 is slower than pure tactical but must stay interactive
-    expect(elapsed).toBeLessThan(800)
+    expect(elapsed).toBeLessThan(100)
   })
 
-  it('hard/impossible on 7×7 return quickly (tactical fallback only)', () => {
+  it('hard/impossible on 7×7 return quickly (tactical only)', () => {
     let g = createGame({
       boardSize: 7,
       settings: { mode: 'vs_ai', humanPlayer: 'X', difficulty: 'impossible' },
@@ -125,21 +124,35 @@ describe('larger boards', () => {
     const move = chooseMove(g, 'impossible')
     const elapsed = performance.now() - t0
     expect(getLegalMoves(g)).toContain(move)
-    expect(elapsed).toBeLessThan(200)
+    expect(elapsed).toBeLessThan(100)
   })
 
-  it('hard on 6×6 completes in milliseconds', () => {
+  it('hard on 6×6 completes in milliseconds (tactical)', () => {
     const g = createGame({
       boardSize: 6,
       settings: { mode: 'vs_ai', humanPlayer: 'X', difficulty: 'hard', firstPlayer: 'O' },
     })
-    // AI is O, first player O — empty board
     const t0 = performance.now()
     const move = chooseMove(g, 'hard')
     const elapsed = performance.now() - t0
     expect(move).toBeGreaterThanOrEqual(0)
     expect(move).toBeLessThan(36)
-    expect(elapsed).toBeLessThan(200)
+    expect(elapsed).toBeLessThan(100)
+  })
+
+  it('impossible on 4×4 stays interactive (shallow minimax)', () => {
+    let g = createGame({
+      boardSize: 4,
+      settings: { mode: 'vs_ai', humanPlayer: 'X', difficulty: 'impossible' },
+    })
+    const r = applyMove(g, 0)
+    if (!r.ok) throw new Error('setup failed')
+    g = r.state
+    const t0 = performance.now()
+    const move = chooseMove(g, 'impossible')
+    const elapsed = performance.now() - t0
+    expect(getLegalMoves(g)).toContain(move)
+    expect(elapsed).toBeLessThan(250)
   })
 
   it('medium takes an instant win on 4×4', () => {

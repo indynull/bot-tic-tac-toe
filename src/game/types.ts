@@ -134,17 +134,11 @@ export function aiPolicyNote(boardSize: BoardSize, difficulty: Difficulty): stri
     return 'Mostly random with occasional tactics'
   }
   if (boardSize === 4) {
-    if (difficulty === 'impossible') return 'Deep shallow search on 4×4 (depth 5; not full-tree optimal)'
-    if (difficulty === 'hard') return 'Shallow search on 4×4 (depth 4; not full-tree optimal)'
+    if (difficulty === 'impossible') return 'Shallow minimax on 4×4 (depth 3; fast, not full-tree)'
+    if (difficulty === 'hard') return 'Shallow minimax on 4×4 (depth 2; fast, not full-tree)'
     return 'Tactical play on 4×4'
   }
-  if (boardSize <= 6) {
-    if (difficulty === 'hard' || difficulty === 'impossible') {
-      return `Limited minimax on ${boardSize}×${boardSize} (tactical fallback only on 7×7)`
-    }
-    return `Tactical play on ${boardSize}×${boardSize}`
-  }
-  return 'Tactical play on 7×7 (fast; not optimal search)'
+  return `Tactical play on ${boardSize}×${boardSize} (fast; not optimal search)`
 }
 
 export const DEFAULT_SETTINGS: Settings = {

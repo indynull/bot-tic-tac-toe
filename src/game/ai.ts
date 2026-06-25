@@ -13,22 +13,19 @@ interface BoardContext {
 }
 
 /**
- * Depth limit for minimax. 3×3 stays exhaustive; larger boards use shallow search
- * with extra ply on 4×4 (impossible gets one more than hard). Still low-ms range.
- * 5×6 run limited minimax; only 7×7 is pure tactical.
+ * Depth limit for minimax. 3×3 stays exhaustive; 4×4 uses a shallow fixed depth.
+ * 5×5+ use tactical only (minimax branching is too slow for interactive play).
  */
 function maxSearchDepth(boardSize: BoardSize, difficulty: Difficulty = 'hard'): number {
   if (boardSize <= 3) return 20
-  // Impossible earns an extra ply on 4×4/5×5; depths stay interactive on CI.
-  if (boardSize === 4) return difficulty === 'impossible' ? 5 : 4
-  if (boardSize === 5) return difficulty === 'impossible' ? 2 : 1
-  if (boardSize === 6) return 1
+  // Hard/impossible on 4×4: 3 plies is fast and still applies pressure (depth 4–5 lagged badly).
+  if (boardSize === 4) return difficulty === 'impossible' ? 3 : 2
   return 1
 }
 
-/** Only 7×7 falls back to pure tactical; 4×6 run limited minimax (was tactical-only on 5+). */
+/** 5×5+ use tactical hard/impossible (wins/blocks/forks) — minimax is too slow here. */
 function prefersTacticalHard(boardSize: BoardSize): boolean {
-  return boardSize >= 7
+  return boardSize >= 5
 }
 
 /** Strategic cell weights for classic 3×3: center > corners > edges. */
@@ -220,12 +217,12 @@ function optimalMoves(
 }
 
 /**
- * Hard: optimal minimax on 3×3; limited-depth minimax on 4×4–6×6; tactical on 7×7.
+ * Hard: optimal minimax on 3×3; shallow minimax on 4×4; tactical on 5×5+.
  * Among equally optimal lines on small boards, pick randomly for variety.
  */
 function chooseHardMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number {
   if (prefersTacticalHard(ctx.boardSize)) {
-    // No random slips on the tactical-only rung (Agrajag: discipline on 7×7).
+    // No random slips on tactical rungs (discipline on 5×5+).
     return chooseMediumMove(board, aiPlayer, ctx, /*allowSlip*/ false)
   }
   return randomChoice(optimalMoves(board, aiPlayer, ctx, 'hard'))
@@ -260,12 +257,12 @@ function openingBookMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): nu
 }
 
 /**
- * Impossible: optimal minimax + deterministic fork/position tie-breaks + opening book on 3×3.
- * On 4×4–6×6 uses limited minimax (extra ply on 4×4) with deterministic tie-breaks; on 7×7 tactical.
+ * Impossible: optimal minimax + deterministic tie-breaks + opening book on 3×3.
+ * Shallow minimax on 4×4; deterministic tactical on 5×5+ (fast, no gifts).
  */
 function chooseImpossibleMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number {
   if (prefersTacticalHard(ctx.boardSize)) {
-    // Deterministic tactical: prefer center/corners over random medium slips
+    // Deterministic tactical: wins, blocks, forks, priority cells — no random slips
     const moves = getEmptyCells(board)
     const human = opponent(aiPlayer)
     for (const m of moves) {

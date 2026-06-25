@@ -18,34 +18,36 @@ import {
   type Theme,
 } from '../game'
 
-/** Artificial thinking delay; shorter on large boards (shallow / tactical AI). */
+/**
+ * Short UI delay so moves don't feel instant — kept low so hard/impossible stay responsive.
+ * Compute time for minimax is separate; this is only setTimeout theater.
+ */
 function aiDelayMs(difficulty: Difficulty, boardSize: number): number {
-  // Larger boards still think briefly; impossible/hard feel heavier without blocking UI.
   if (boardSize > 3) {
     switch (difficulty) {
       case 'easy':
-        return 140
+        return 60
       case 'medium':
-        return 220
+        return 90
       case 'hard':
-        return 320
+        return 120
       case 'impossible':
-        return 400 + Math.floor(Math.random() * 200)
+        return 150
       default:
-        return 220
+        return 90
     }
   }
   switch (difficulty) {
     case 'easy':
-      return 320
+      return 120
     case 'medium':
-      return 500
+      return 180
     case 'hard':
-      return 780
+      return 260
     case 'impossible':
-      return 950 + Math.floor(Math.random() * 750)
+      return 320
     default:
-      return 780
+      return 200
   }
 }
 

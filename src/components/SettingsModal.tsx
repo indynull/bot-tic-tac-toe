@@ -70,9 +70,9 @@ export function SettingsModal({
           {settings.mode === 'vs_ai' && (
             <p className={styles.hint} role="note">
               AI strength: {aiPolicyNote(boardSize, settings.difficulty)}. Hard/impossible are
-              optimal only on 3×3; 4×4–6×6 use limited minimax (impossible gets an extra ply on
-              4×4); only 7×7 is pure tactical for speed. A draw unlocks a larger empty board next
-              game and tiers difficulty up one step (if not already impossible).
+              optimal only on 3×3; 4×4 uses shallow minimax; 5×5+ is tactical only (kept fast). A
+              draw unlocks a larger empty board next game and tiers difficulty up one step (if not
+              already impossible).
             </p>
           )}
 
