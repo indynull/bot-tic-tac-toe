@@ -11,5 +11,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['tests/**/*.test.ts', 'src/**/*.test.ts'],
+    // Minimax on 4×4 can exceed the default 5s on slower CI runners.
+    testTimeout: 20_000,
   },
 })
