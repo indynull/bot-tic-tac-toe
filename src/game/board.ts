@@ -189,12 +189,16 @@ export interface GrowPlan {
 
 /**
  * Plan in-place growth so play can continue after a would-be draw.
- * Tries +1 first; skips sizes where the player about to move would win immediately.
+ * Always climbs +1 (then larger only if embed already contains a finished win —
+ * rare with top-left embed). We intentionally do **not** block growth when the
+ * next player could win on their first move on the new ring; that was stopping
+ * escalation after a single 3→4 growth because 4-in-a-row threats appeared often.
+ * Growth keeps going until max size (7×7), where a full board scores a real draw.
  */
 export function planBoardGrowth(
   board: Cell[],
   boardSize: BoardSize,
-  nextPlayer: Player,
+  _nextPlayer: Player,
 ): GrowPlan {
   if (boardSize >= MAX_BOARD_SIZE) {
     return {
@@ -209,9 +213,9 @@ export function planBoardGrowth(
     const candidate = size as BoardSize
     const winLength = winLengthForBoard(candidate)
     const grown = embedBoard(board, boardSize, candidate)
+    // Only skip if the embedded position is already a completed win (invalid mid-game state).
     const outcome = evaluateBoard(grown, candidate, winLength)
     if (outcome.status === 'won') continue
-    if (hasImmediateWin(grown, candidate, winLength, nextPlayer)) continue
     return { boardSize: candidate, winLength, board: grown, grew: true }
   }
 

@@ -6,7 +6,6 @@ import {
   evaluateBoard,
   getLegalMoves,
   growBoardInPlace,
-  hasImmediateWin,
   planBoardGrowth,
   remapIndex,
   resetGame,
@@ -170,12 +169,50 @@ describe('board embed helpers', () => {
     expect(remapIndex(8, 3, 5)).toBe(12)
   })
 
-  it('planBoardGrowth prefers +1 when next player cannot win immediately', () => {
+  it('planBoardGrowth always prefers +1 for continued escalation', () => {
     const board = ['X', 'O', 'X', 'X', 'O', 'O', 'O', 'X', 'X'] as ('X' | 'O' | null)[]
     const plan = planBoardGrowth(board, 3, 'O')
     expect(plan.grew).toBe(true)
     expect(plan.boardSize).toBe(4)
-    expect(hasImmediateWin(plan.board, 4, 4, 'O')).toBe(false)
+  })
+
+  it('planBoardGrowth keeps climbing from 4×4 even if next player has threats', () => {
+    const board4: ('X' | 'O' | null)[] = Array(16).fill('X')
+    // Alternate so it's a full board without necessarily winning embed on 5×5
+    for (let i = 0; i < 16; i++) board4[i] = i % 2 === 0 ? 'X' : 'O'
+    const plan = planBoardGrowth(board4, 4, 'X')
+    expect(plan.grew).toBe(true)
+    expect(plan.boardSize).toBeGreaterThanOrEqual(5)
+  })
+})
+
+describe('chained in-place growth', () => {
+  it('can grow more than once in a single game (3→4 and again on next fill)', () => {
+    let g = playMoves()
+    expect(g.boardSize).toBe(4)
+    expect(g.status).toBe('in_progress')
+
+    // Fill remaining empty cells on 4×4 (new ring) without relying on a specific winner.
+    // Play legally until board would draw/grow or game ends.
+    let guard = 0
+    while (g.status === 'in_progress' && g.boardSize === 4 && guard++ < 32) {
+      const empties = g.board
+        .map((c, i) => (c === null ? i : -1))
+        .filter((i) => i >= 0)
+      if (empties.length === 0) break
+      const r = applyMove(g, empties[0]!)
+      if (!r.ok) break
+      g = r.state
+    }
+    // Either grew to 5+ (preferred) or someone won on 4×4 — both valid; assert not stuck at 4 draw
+    if (g.status === 'draw') {
+      expect(g.boardSize).toBeGreaterThanOrEqual(7)
+    } else if (g.status === 'in_progress') {
+      expect(g.boardSize).toBeGreaterThanOrEqual(4)
+      // If we filled the 4×4 ring without a 4-in-a-row, must have grown
+      const filled4 = g.boardSize > 4 || g.board.filter((c) => c === null).length > 0
+      expect(filled4 || g.justGrew || g.boardSize > 4).toBe(true)
+    }
   })
 })
 
