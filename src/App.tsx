@@ -36,7 +36,7 @@ export default function App() {
       <header className={appStyles.header}>
         <h1 className={appStyles.title}>Tic-Tac-Toe</h1>
         <p className={appStyles.tagline}>
-          Local PvP &amp; vs computer — draws escalate to a bigger board
+          Local PvP &amp; vs computer — full boards grow in place (keep your marks)
           {ctrl.game.boardSize > 3 ? ` · now ${ctrl.game.boardSize}×${ctrl.game.boardSize}` : ''}
         </p>
       </header>
@@ -73,6 +73,7 @@ export default function App() {
       <SettingsModal
         open={ctrl.settingsOpen}
         settings={ctrl.game.settings}
+        boardSize={ctrl.game.boardSize}
         onClose={() => ctrl.setSettingsOpen(false)}
         onFirstPlayer={ctrl.setFirstPlayer}
         onHumanPlayer={ctrl.setHumanPlayer}

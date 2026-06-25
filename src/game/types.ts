@@ -40,7 +40,7 @@ export interface Move {
 export interface GameState {
   /** N for an N×N board (3–7). */
   boardSize: BoardSize
-  /** Marks in a row needed to win (equals boardSize). */
+  /** Marks in a row needed to win (see `winLengthForBoard`). */
   winLength: number
   board: Cell[]
   currentPlayer: Player
@@ -51,10 +51,12 @@ export interface GameState {
   scores: Scores
   settings: Settings
   /**
-   * After a draw, the next new game escalates board size + difficulty.
-   * Cleared when a new game starts (escalated or not).
+   * True for one render cycle after an in-place growth so UI/a11y can announce it.
+   * Cleared on the next move, undo, or new game. Not persisted.
    */
-  pendingEscalation: boolean
+  justGrew: boolean
+  /** Board size before the most recent growth (for status copy); null if never grew this game. */
+  previousBoardSize: BoardSize | null
 }
 
 export type MoveErrorReason =
@@ -106,9 +108,29 @@ export function winLengthForBoard(boardSize: BoardSize): number {
   return 5
 }
 
-/** Whether escalating difficulty is meaningful (shallow search on huge boards). */
+/**
+ * Difficulty tier-up only while the source board still uses real minimax (≤3).
+ * On 4×4+ the engine is depth-limited/tactical — do not advertise a harder tier.
+ */
 export function shouldEscalateDifficulty(boardSize: BoardSize): boolean {
-  return boardSize <= 4
+  return boardSize <= 3
+}
+
+/** Human-readable AI policy note by board size (settings / status). */
+export function aiPolicyNote(boardSize: BoardSize, difficulty: Difficulty): string {
+  if (boardSize <= 3) {
+    if (difficulty === 'impossible') return 'Optimal minimax + opening book on 3×3'
+    if (difficulty === 'hard') return 'Optimal minimax on 3×3'
+    if (difficulty === 'medium') return 'Tactical (wins/blocks/forks)'
+    return 'Mostly random with occasional tactics'
+  }
+  if (boardSize === 4) {
+    if (difficulty === 'hard' || difficulty === 'impossible') {
+      return 'Shallow minimax on 4×4 (not full-tree optimal)'
+    }
+    return 'Tactical play on 4×4'
+  }
+  return 'Tactical play only on 5×5+ (fast; not optimal search)'
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -121,23 +143,22 @@ export const DEFAULT_SETTINGS: Settings = {
 }
 
 export const STORAGE_KEY = 'ttt-v1'
-/** Bumped when persisted progression fields were added. */
-export const STORAGE_VERSION = 2
+/** v3: progression is boardSize only (removed pendingEscalation). */
+export const STORAGE_VERSION = 3
 
 export interface ProgressionState {
+  /** Ladder size for new/empty games (grows in place during play; reset scores → 3). */
   boardSize: BoardSize
-  pendingEscalation: boolean
 }
 
 export const DEFAULT_PROGRESSION: ProgressionState = {
   boardSize: DEFAULT_BOARD_SIZE,
-  pendingEscalation: false,
 }
 
 export interface PersistedData {
   version: number
   scores: Scores
   settings: Settings
-  /** Draw-escalation ladder (board size + pending flag). */
+  /** Current ladder board size (in-place growth updates during play; new game keeps it). */
   progression?: ProgressionState
 }

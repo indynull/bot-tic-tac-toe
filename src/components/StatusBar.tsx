@@ -1,4 +1,5 @@
 import type { GameState } from '../game'
+import { aiPolicyNote } from '../game'
 import styles from '../styles/StatusBar.module.css'
 
 interface StatusBarProps {
@@ -19,11 +20,22 @@ function aiThinkingMessage(difficulty: GameState['settings']['difficulty']): str
 
 export function getStatusMessage(game: GameState, aiThinking: boolean): string {
   if (aiThinking) return aiThinkingMessage(game.settings.difficulty)
+  if (game.justGrew && game.previousBoardSize != null) {
+    const from = game.previousBoardSize
+    const to = game.boardSize
+    const tier =
+      game.settings.mode === 'vs_ai' && from <= 3
+        ? ` · AI tier up (${game.settings.difficulty})`
+        : game.settings.mode === 'vs_ai' && to >= 4
+          ? ` · ${aiPolicyNote(to, game.settings.difficulty)}`
+          : ''
+    return `Board grew ${from}×${from} → ${to}×${to} (marks kept, top-left; ${game.winLength} in a row now)${tier} — ${game.currentPlayer}'s turn`
+  }
   if (game.status === 'won' && game.winner) {
     if (game.settings.mode === 'vs_ai') {
       const humanWon = game.winner === game.settings.humanPlayer
       if (humanWon) return `You win! (${game.winner})`
-      if (game.settings.difficulty === 'impossible') {
+      if (game.settings.difficulty === 'impossible' && game.boardSize <= 3) {
         return `Computer wins — as expected. (${game.winner})`
       }
       return `Computer wins! (${game.winner})`
@@ -31,24 +43,8 @@ export function getStatusMessage(game: GameState, aiThinking: boolean): string {
     return `${game.winner} wins!`
   }
   if (game.status === 'draw') {
-    if (game.settings.mode === 'vs_ai' && game.settings.difficulty === 'impossible') {
-      if (game.pendingEscalation && game.boardSize < 7) {
-        return `Draw — best possible outcome vs impossible AI (next: ${game.boardSize + 1}×${game.boardSize + 1})`
-      }
-      return "Draw — best possible outcome vs impossible AI"
-    }
-    if (game.pendingEscalation && game.boardSize < 7) {
-      const next = game.boardSize + 1
-      if (game.settings.mode === 'vs_ai' && game.boardSize <= 4) {
-        return `It's a draw — New game → ${next}×${next} (AI tier up)`
-      }
-      if (game.settings.mode === 'vs_ai') {
-        return `It's a draw — New game → ${next}×${next} (same AI tier; depth-limited on large boards)`
-      }
-      return `It's a draw — New game → ${next}×${next}`
-    }
-    if (game.pendingEscalation && game.boardSize >= 7) {
-      return "It's a draw — max board size reached"
+    if (game.boardSize >= 7) {
+      return "It's a draw — max board size (7×7); no further growth"
     }
     return "It's a draw"
   }
@@ -78,9 +74,11 @@ export function StatusBar({ game, aiThinking }: StatusBarProps) {
   const message = getStatusMessage(game, aiThinking)
   const tone =
     game.status === 'won' ? styles.won : game.status === 'draw' ? styles.draw : styles.progress
+  // Assertive when the grid size just changed so screen readers announce growth
+  const live = game.justGrew ? 'assertive' : 'polite'
 
   return (
-    <div className={`${styles.status} ${tone}`} role="status" aria-live="polite" aria-atomic="true">
+    <div className={`${styles.status} ${tone}`} role="status" aria-live={live} aria-atomic="true">
       {message}
     </div>
   )

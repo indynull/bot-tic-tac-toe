@@ -1,4 +1,14 @@
-import { createEmptyBoard, evaluateBoard, getEmptyCells, isValidIndex, opponent, setCell } from './board'
+import {
+  createEmptyBoard,
+  embedBoard,
+  evaluateBoard,
+  getEmptyCells,
+  isValidIndex,
+  opponent,
+  planBoardGrowth,
+  remapIndex,
+  setCell,
+} from './board'
 import type {
   ApplyMoveResult,
   BoardSize,
@@ -12,7 +22,6 @@ import {
   DEFAULT_BOARD_SIZE,
   DEFAULT_SCORES,
   DEFAULT_SETTINGS,
-  nextBoardSize,
   nextDifficulty,
   shouldEscalateDifficulty,
   winLengthForBoard,
@@ -22,21 +31,14 @@ export interface CreateGameOptions {
   settings?: Partial<Settings>
   scores?: Scores
   boardSize?: BoardSize
-  pendingEscalation?: boolean
 }
 
 export interface ResetGameOptions {
   preserveScores?: boolean
   preserveSettings?: boolean
   settings?: Partial<Settings>
-  /** Force a specific board size (skips draw-escalation logic). */
+  /** Force a specific board size for the new empty game. */
   boardSize?: BoardSize
-  /**
-   * When true, apply pending draw escalation (bigger board + harder AI).
-   * Default: **false** — only explicit "New game" should pass true so theme/settings
-   * changes don't consume an escalation token.
-   */
-  applyEscalation?: boolean
   /** Reset ladder back to classic 3×3 (e.g. reset scores / user opt-out). */
   resetProgression?: boolean
 }
@@ -74,7 +76,41 @@ export function createGame(options: CreateGameOptions = {}): GameState {
     moveHistory: [],
     scores,
     settings,
-    pendingEscalation: options.pendingEscalation ?? false,
+    justGrew: false,
+    previousBoardSize: null,
+  }
+}
+
+/**
+ * Apply an in-place board growth: embed marks (top-left), remap history, optionally bump AI tier.
+ * Game stays in progress; next player moves on the larger board.
+ * Undo after growth is size-sticky (stays on large board; does not shrink back).
+ */
+export function growBoardInPlace(state: GameState, toSize: BoardSize): GameState {
+  if (toSize <= state.boardSize) return state
+  const fromSize = state.boardSize
+  const winLength = winLengthForBoard(toSize)
+  const board = embedBoard(state.board, fromSize, toSize)
+  const moveHistory = state.moveHistory.map((m) => ({
+    ...m,
+    cellIndex: remapIndex(m.cellIndex, fromSize, toSize),
+  }))
+  let settings = state.settings
+  if (settings.mode === 'vs_ai' && shouldEscalateDifficulty(fromSize)) {
+    settings = { ...settings, difficulty: nextDifficulty(settings.difficulty) }
+  }
+  return {
+    ...state,
+    boardSize: toSize,
+    winLength,
+    board,
+    moveHistory,
+    settings,
+    status: 'in_progress',
+    winner: null,
+    winningLine: null,
+    justGrew: true,
+    previousBoardSize: fromSize,
   }
 }
 
@@ -95,8 +131,47 @@ export function applyMove(state: GameState, cellIndex: number): ApplyMoveResult 
   const move: Move = { cellIndex, player }
   const moveHistory = [...state.moveHistory, move]
 
+  // Full board but not a win → try growing in place so the game continues
+  if (outcome.status === 'draw') {
+    const nextPlayer = opponent(player)
+    const plan = planBoardGrowth(board, state.boardSize, nextPlayer)
+    if (plan.grew) {
+      const withMove: GameState = {
+        ...state,
+        board,
+        moveHistory,
+        justGrew: false,
+      }
+      const grown = growBoardInPlace(withMove, plan.boardSize)
+      return {
+        ok: true,
+        state: {
+          ...grown,
+          currentPlayer: nextPlayer,
+          scores: state.scores,
+        },
+      }
+    }
+    // At max size (or no safe growth) — real draw, count it
+    const scores = applyOutcomeScores(state.scores, 'draw', null)
+    return {
+      ok: true,
+      state: {
+        ...state,
+        board,
+        currentPlayer: player,
+        status: 'draw',
+        winner: null,
+        winningLine: null,
+        moveHistory,
+        scores,
+        justGrew: false,
+      },
+    }
+  }
+
   let scores = state.scores
-  if (outcome.status === 'won' || outcome.status === 'draw') {
+  if (outcome.status === 'won') {
     scores = applyOutcomeScores(state.scores, outcome.status, outcome.winner)
   }
 
@@ -111,22 +186,21 @@ export function applyMove(state: GameState, cellIndex: number): ApplyMoveResult 
       winningLine: outcome.winningLine,
       moveHistory,
       scores,
-      // Draw schedules escalation for the next new game
-      pendingEscalation: outcome.status === 'draw' ? true : state.pendingEscalation,
+      justGrew: false,
     },
   }
 }
 
 /**
- * Resolve board size + settings for a new game, optionally escalating after a draw.
- * Escalation only runs when `applyEscalation: true` (explicit New game).
+ * Resolve board size + settings for a new (empty) game.
+ * Board growth happens in-place on draws; new game keeps current ladder size unless reset.
  */
 export function resolveEscalation(
   state: GameState,
   options: ResetGameOptions = {},
 ): { boardSize: BoardSize; settings: Settings } {
   const preserveSettings = options.preserveSettings !== false
-  let settings = preserveSettings
+  const settings = preserveSettings
     ? { ...state.settings, ...options.settings }
     : mergeSettings(options.settings)
 
@@ -138,30 +212,17 @@ export function resolveEscalation(
     return { boardSize: options.boardSize, settings }
   }
 
-  const shouldEscalate = options.applyEscalation === true && state.pendingEscalation
-  if (!shouldEscalate) {
-    return { boardSize: state.boardSize, settings }
-  }
-
-  const boardSize = nextBoardSize(state.boardSize)
-  // Bump difficulty only while search is still meaningful (small boards)
-  if (settings.mode === 'vs_ai' && shouldEscalateDifficulty(state.boardSize)) {
-    settings = { ...settings, difficulty: nextDifficulty(settings.difficulty) }
-  }
-  return { boardSize, settings }
+  // Keep current board size on the ladder (growth already applied in-place during play)
+  return { boardSize: state.boardSize, settings }
 }
 
 export function resetGame(state: GameState, options: ResetGameOptions = {}): GameState {
   const preserveScores = options.preserveScores !== false
   const { boardSize, settings } = resolveEscalation(state, options)
-  // If we did not apply escalation, preserve pending flag so New game can still escalate
-  const consumedEscalation = options.applyEscalation === true && state.pendingEscalation
-  const pendingEscalation = consumedEscalation || options.resetProgression ? false : state.pendingEscalation
   return createGame({
     settings,
     scores: preserveScores ? cloneScores(state.scores) : { ...DEFAULT_SCORES },
     boardSize,
-    pendingEscalation,
   })
 }
 
@@ -201,10 +262,7 @@ export function undoMove(state: GameState): GameState {
     scores.draws = Math.max(0, scores.draws - 1)
   }
 
-  // Undoing a completed draw clears pending escalation for that outcome
-  const pendingEscalation =
-    state.status === 'draw' ? false : state.pendingEscalation
-
+  // Size is sticky: undo never shrinks a board that grew in place
   return {
     ...state,
     board,
@@ -214,7 +272,7 @@ export function undoMove(state: GameState): GameState {
     winningLine: outcome.winningLine,
     moveHistory: history,
     scores,
-    pendingEscalation,
+    justGrew: false,
   }
 }
 

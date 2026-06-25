@@ -18,8 +18,25 @@ import {
   type Theme,
 } from '../game'
 
-/** Thinking delay scales with difficulty — hard/impossible feels deliberate & unnerving. */
-function aiDelayMs(difficulty: Difficulty): number {
+/**
+ * Artificial thinking delay. On boards > 3×3 keep delays tiny so growth feels instant
+ * (search is already tactical/shallow on large boards).
+ */
+function aiDelayMs(difficulty: Difficulty, boardSize: number): number {
+  if (boardSize > 3) {
+    switch (difficulty) {
+      case 'easy':
+        return 40
+      case 'medium':
+        return 60
+      case 'hard':
+        return 80
+      case 'impossible':
+        return 100
+      default:
+        return 60
+    }
+  }
   switch (difficulty) {
     case 'easy':
       return 280
@@ -28,7 +45,6 @@ function aiDelayMs(difficulty: Difficulty): number {
     case 'hard':
       return 700
     case 'impossible':
-      // Variable "calculating..." pause — keeps the human on edge
       return 850 + Math.floor(Math.random() * 650)
     default:
       return 700
@@ -41,7 +57,6 @@ function initialState(): GameState {
     scores,
     settings,
     boardSize: progression.boardSize,
-    pendingEscalation: progression.pendingEscalation,
   })
 }
 
@@ -60,13 +75,12 @@ export function useGameController() {
     }
   }, [])
 
-  // Persist scores, settings, and draw-escalation progression
+  // Persist scores, settings, and ladder board size
   useEffect(() => {
     savePersisted(game.scores, game.settings, {
       boardSize: game.boardSize,
-      pendingEscalation: game.pendingEscalation,
     })
-  }, [game.scores, game.settings, game.boardSize, game.pendingEscalation])
+  }, [game.scores, game.settings, game.boardSize])
 
   // Apply theme to document
   useEffect(() => {
@@ -98,7 +112,7 @@ export function useGameController() {
       } finally {
         setAiThinking(false)
       }
-    }, aiDelayMs(state.settings.difficulty))
+    }, aiDelayMs(state.settings.difficulty, state.boardSize))
   }, [clearAiTimer])
 
   // Trigger AI when it's their turn
@@ -131,10 +145,8 @@ export function useGameController() {
   const newGame = useCallback(() => {
     clearAiTimer()
     setAiThinking(false)
-    // Only explicit New game consumes pending draw escalation
-    setGame((g) =>
-      resetGame(g, { preserveScores: true, preserveSettings: true, applyEscalation: true }),
-    )
+    // New empty board at current ladder size (growth happens in-place during play)
+    setGame((g) => resetGame(g, { preserveScores: true, preserveSettings: true }))
   }, [clearAiTimer])
 
   const doResetScores = useCallback(() => {
@@ -162,11 +174,9 @@ export function useGameController() {
       setGame((g) => {
         const next = updateSettings(g, partial)
         if (restartGame || partial.mode !== undefined || partial.firstPlayer !== undefined || partial.humanPlayer !== undefined) {
-          // Settings/mode restart must NOT consume draw escalation
           return resetGame(next, {
             preserveScores: true,
             preserveSettings: true,
-            applyEscalation: false,
           })
         }
         return next
