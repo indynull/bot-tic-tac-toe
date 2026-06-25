@@ -14,17 +14,19 @@ interface BoardContext {
 
 /**
  * Depth limit for minimax. 3×3 stays exhaustive; larger boards use shallow search
- * with one extra ply on 4×4 vs the old ladder (still low-millisecond range).
+ * with extra ply on 4×4 (impossible gets one more than hard). Still low-ms range.
+ * 5×6 run limited minimax; only 7×7 is pure tactical.
  */
-function maxSearchDepth(boardSize: BoardSize): number {
+function maxSearchDepth(boardSize: BoardSize, difficulty: Difficulty = 'hard'): number {
   if (boardSize <= 3) return 20
-  if (boardSize === 4) return 4
+  // Impossible earns an extra ply on 4×4; depth 5 is still interactive on CI.
+  if (boardSize === 4) return difficulty === 'impossible' ? 5 : 4
   if (boardSize === 5) return 2
   if (boardSize === 6) return 1
   return 1
 }
 
-/** Only 7×7 falls back to pure tactical; 5×6 run limited minimax (was tactical-only). */
+/** Only 7×7 falls back to pure tactical; 4×6 run limited minimax (was tactical-only on 5+). */
 function prefersTacticalHard(boardSize: BoardSize): boolean {
   return boardSize >= 7
 }
@@ -189,11 +191,16 @@ function minimax(
 }
 
 /** Collect all minimax-optimal moves (same best score). */
-function optimalMoves(board: Cell[], aiPlayer: Player, ctx: BoardContext): number[] {
+function optimalMoves(
+  board: Cell[],
+  aiPlayer: Player,
+  ctx: BoardContext,
+  difficulty: Difficulty = 'hard',
+): number[] {
   const moves = getEmptyCells(board)
   if (moves.length === 0) throw new Error('No legal moves')
 
-  const maxDepth = maxSearchDepth(ctx.boardSize)
+  const maxDepth = maxSearchDepth(ctx.boardSize, difficulty)
   let bestScore = -Infinity
   const best: number[] = []
 
@@ -220,7 +227,7 @@ function chooseHardMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): num
   if (prefersTacticalHard(ctx.boardSize)) {
     return chooseMediumMove(board, aiPlayer, ctx)
   }
-  return randomChoice(optimalMoves(board, aiPlayer, ctx))
+  return randomChoice(optimalMoves(board, aiPlayer, ctx, 'hard'))
 }
 
 /**
@@ -253,7 +260,7 @@ function openingBookMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): nu
 
 /**
  * Impossible: optimal minimax + deterministic fork/position tie-breaks + opening book on 3×3.
- * On 4×4–6×6 uses limited minimax with deterministic tie-breaks; on 7×7 uses tactical play.
+ * On 4×4–6×6 uses limited minimax (extra ply on 4×4) with deterministic tie-breaks; on 7×7 tactical.
  */
 function chooseImpossibleMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number {
   if (prefersTacticalHard(ctx.boardSize)) {
@@ -279,11 +286,11 @@ function chooseImpossibleMove(board: Cell[], aiPlayer: Player, ctx: BoardContext
 
   const book = openingBookMove(board, aiPlayer, ctx)
   if (book !== null) {
-    const optimal = optimalMoves(board, aiPlayer, ctx)
+    const optimal = optimalMoves(board, aiPlayer, ctx, 'impossible')
     if (optimal.includes(book)) return book
   }
 
-  const optimal = optimalMoves(board, aiPlayer, ctx)
+  const optimal = optimalMoves(board, aiPlayer, ctx, 'impossible')
   let bestTie = -Infinity
   let bestMove = optimal[0]!
   for (const m of optimal) {

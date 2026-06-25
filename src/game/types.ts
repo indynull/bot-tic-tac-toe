@@ -134,9 +134,8 @@ export function aiPolicyNote(boardSize: BoardSize, difficulty: Difficulty): stri
     return 'Mostly random with occasional tactics'
   }
   if (boardSize === 4) {
-    if (difficulty === 'hard' || difficulty === 'impossible') {
-      return 'Deeper shallow search on 4×4 (still not full-tree optimal)'
-    }
+    if (difficulty === 'impossible') return 'Deep shallow search on 4×4 (depth 5; not full-tree optimal)'
+    if (difficulty === 'hard') return 'Shallow search on 4×4 (depth 4; not full-tree optimal)'
     return 'Tactical play on 4×4'
   }
   if (boardSize <= 6) {
