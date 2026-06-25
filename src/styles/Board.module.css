@@ -1,10 +1,31 @@
 .board {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.5rem;
+  grid-template-columns: repeat(var(--board-n, 3), 1fr);
+  gap: clamp(0.2rem, 1.2vw, 0.5rem);
   width: min(100%, 360px);
   aspect-ratio: 1;
   margin: 0 auto;
+  transition: width 0.25s ease;
+}
+
+.size3 {
+  width: min(100%, 360px);
+}
+
+.size4 {
+  width: min(100%, 400px);
+}
+
+.size5 {
+  width: min(100%, 440px);
+}
+
+.size6 {
+  width: min(100%, 480px);
+}
+
+.size7 {
+  width: min(100%, 520px);
 }
 
 .drawBoard {
@@ -51,7 +72,7 @@
 }
 
 .mark {
-  font-size: clamp(2rem, 12vw, 3.25rem);
+  font-size: clamp(1rem, calc(28vw / var(--board-n, 3)), 3.25rem);
   font-weight: 800;
   line-height: 1;
   animation: popIn 0.25s ease;

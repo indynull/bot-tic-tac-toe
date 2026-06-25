@@ -5,6 +5,7 @@ import {
   getLegalMoves,
   resetGame,
   resetScores,
+  resolveEscalation,
   undoLastTurn,
   undoMove,
   WIN_LINES,
@@ -13,6 +14,8 @@ import {
 describe('createGame', () => {
   it('starts with an empty board and X by default', () => {
     const g = createGame()
+    expect(g.boardSize).toBe(3)
+    expect(g.winLength).toBe(3)
     expect(g.board).toEqual(Array(9).fill(null))
     expect(g.currentPlayer).toBe('X')
     expect(g.status).toBe('in_progress')
@@ -20,6 +23,14 @@ describe('createGame', () => {
     expect(g.winningLine).toBeNull()
     expect(g.moveHistory).toEqual([])
     expect(g.scores).toEqual({ X: 0, O: 0, draws: 0 })
+    expect(g.pendingEscalation).toBe(false)
+  })
+
+  it('supports custom board sizes', () => {
+    const g = createGame({ boardSize: 4 })
+    expect(g.boardSize).toBe(4)
+    expect(g.winLength).toBe(4)
+    expect(g.board).toHaveLength(16)
   })
 
   it('respects firstPlayer setting', () => {
@@ -116,6 +127,74 @@ describe('draw detection', () => {
     expect(g.status).toBe('draw')
     expect(g.winner).toBeNull()
     expect(g.scores.draws).toBe(1)
+    expect(g.pendingEscalation).toBe(true)
+  })
+})
+
+describe('draw escalation', () => {
+  it('escalates board size and difficulty after a draw on new game (vs AI)', () => {
+    const moves = [0, 1, 2, 4, 3, 6, 5, 8, 7]
+    let g = createGame({ settings: { mode: 'vs_ai', difficulty: 'easy' } })
+    for (const m of moves) {
+      const r = applyMove(g, m)
+      if (!r.ok) return
+      g = r.state
+    }
+    expect(g.pendingEscalation).toBe(true)
+
+    const planned = resolveEscalation(g)
+    expect(planned.boardSize).toBe(4)
+    expect(planned.settings.difficulty).toBe('medium')
+
+    g = resetGame(g, { preserveScores: true, preserveSettings: true })
+    expect(g.boardSize).toBe(4)
+    expect(g.board).toHaveLength(16)
+    expect(g.settings.difficulty).toBe('medium')
+    expect(g.pendingEscalation).toBe(false)
+    expect(g.status).toBe('in_progress')
+  })
+
+  it('escalates board size only in PvP (no difficulty change)', () => {
+    const moves = [0, 1, 2, 4, 3, 6, 5, 8, 7]
+    let g = createGame({ settings: { mode: 'local_pvp', difficulty: 'easy' } })
+    for (const m of moves) {
+      const r = applyMove(g, m)
+      if (!r.ok) return
+      g = r.state
+    }
+    g = resetGame(g)
+    expect(g.boardSize).toBe(4)
+    expect(g.settings.difficulty).toBe('easy')
+  })
+
+  it('does not escalate without a draw', () => {
+    let g = createGame({ settings: { mode: 'vs_ai', difficulty: 'easy' } })
+    // X wins top row
+    for (const idx of [0, 3, 1, 4, 2]) {
+      const r = applyMove(g, idx)
+      if (!r.ok) return
+      g = r.state
+    }
+    expect(g.status).toBe('won')
+    expect(g.pendingEscalation).toBe(false)
+    g = resetGame(g)
+    expect(g.boardSize).toBe(3)
+    expect(g.settings.difficulty).toBe('easy')
+  })
+
+  it('detects 4-in-a-row on a 4×4 board', () => {
+    let g = createGame({ boardSize: 4 })
+    // X fills first row: 0,1,2,3 with O playing elsewhere
+    const seq = [0, 4, 1, 5, 2, 6, 3]
+    for (const m of seq) {
+      const r = applyMove(g, m)
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      g = r.state
+    }
+    expect(g.status).toBe('won')
+    expect(g.winner).toBe('X')
+    expect(g.winningLine).toEqual([0, 1, 2, 3])
   })
 })
 
