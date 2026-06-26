@@ -33,7 +33,7 @@ export interface Settings {
   soundEnabled: boolean
   /**
    * Mine mode: plant hidden traps (uses a turn). If the opponent steps on your mine,
-   * they claim that cell and convert one of your marks — risky area denial.
+   * you claim that cell and may convert one of their marks (they wasted the turn).
    */
   mineMode: boolean
 }

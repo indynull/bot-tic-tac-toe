@@ -21,7 +21,7 @@ describe('mine mode', () => {
     expect(g.justPlantedMine).toBe(true)
   })
 
-  it('stepping on enemy mine claims cell and converts owner mark', () => {
+  it('stepping on enemy mine gives the cell to the trap owner', () => {
     let g = createGame({ settings: { mineMode: true, mode: 'local_pvp', firstPlayer: 'X' } })
     // X places center
     let r = applyMove(g, 4)
@@ -33,18 +33,20 @@ describe('mine mode', () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     g = r.state
-    // X steps on 0 — should get cell 0 and steal O's mark… O has no mark yet
+    // X steps on 0 — O (owner) gets cell 0; may steal X's center
     r = applyMove(g, 0)
     expect(r.ok).toBe(true)
     if (!r.ok) return
     g = r.state
-    expect(g.board[0]).toBe('X')
+    expect(g.board[0]).toBe('O')
+    expect(g.board[4]).toBe('O') // stolen from X
     expect(g.mines[0]).toBeUndefined()
     expect(g.lastMineEvent?.stepper).toBe('X')
     expect(g.lastMineEvent?.owner).toBe('O')
+    expect(g.currentPlayer).toBe('O') // owner to move after trap
   })
 
-  it('mine trigger steals owner mark when they have one', () => {
+  it('mine trigger converts a mark from the stepper to the owner', () => {
     let g = createGame({ settings: { mineMode: true, mode: 'local_pvp', firstPlayer: 'X' } })
     for (const m of [4, 0]) {
       // X center, O corner
@@ -56,14 +58,20 @@ describe('mine mode', () => {
     let r = plantMine(g, 8)
     if (!r.ok) throw new Error('plant')
     g = r.state
-    // O steps on 8 — O claims 8 and converts X's center (4) to O
+    // O steps on 8 — X owns the trap: cell 8 is X, O's corner 0 flips to X
     r = applyMove(g, 8)
     if (!r.ok) throw new Error('step')
     g = r.state
-    expect(g.board[8]).toBe('O')
-    expect(g.board[4]).toBe('O')
-    expect(g.board[0]).toBe('O')
-    expect(g.lastMineEvent?.capturedIndex).toBe(4)
+    expect(g.board[8]).toBe('X')
+    expect(g.board[0]).toBe('X')
+    expect(g.board[4]).toBe('X')
+    expect(g.lastMineEvent?.capturedIndex).toBe(0)
+    // X may have already won via the trap conversion (3-in-a-row)
+    if (g.status === 'won') {
+      expect(g.winner).toBe('X')
+    } else {
+      expect(g.currentPlayer).toBe('X')
+    }
   })
 
   it('disabled without mineMode', () => {

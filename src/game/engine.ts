@@ -244,13 +244,14 @@ export function applyMove(state: GameState, cellIndex: number): ApplyMoveResult 
   let triggeredMineOwner: Player | undefined
 
   const mineOwner = mines[cellIndex]
-  // Stepping on an enemy mine: you claim the cell and take over one of their marks.
+  // Enemy mine: trap favors the **owner** — they get the cell and may convert one of the
+  // stepper's marks (take over the victim's position). Stepper still spends their turn.
   if (mineOwner !== undefined && mineOwner !== player) {
     delete mines[cellIndex]
-    board[cellIndex] = player
-    const capture = findCaptureTarget(board, state.moveHistory, mineOwner)
-    if (capture !== null && capture !== cellIndex && board[capture] === mineOwner) {
-      board[capture] = player
+    board[cellIndex] = mineOwner
+    const capture = findCaptureTarget(board, state.moveHistory, player)
+    if (capture !== null && capture !== cellIndex && board[capture] === player) {
+      board[capture] = mineOwner
       capturedIndex = capture
     }
     triggeredMineOwner = mineOwner
@@ -261,7 +262,7 @@ export function applyMove(state: GameState, cellIndex: number): ApplyMoveResult 
       capturedIndex: capturedIndex ?? null,
     }
   } else {
-    // Own mine or no mine — normal place; remove own mine if planting over it (shouldn't happen)
+    // Own mine or no mine — normal place; clear own mine if stepping on it
     if (mineOwner === player) delete mines[cellIndex]
     board = setCell(board, cellIndex, player)
   }
@@ -295,7 +296,8 @@ export function applyMove(state: GameState, cellIndex: number): ApplyMoveResult 
         ...state,
         ...basePatch,
         board,
-        currentPlayer: player,
+        // Prefer actual winner (mine owner can win on the trap without being the stepper).
+        currentPlayer: outcome.winner ?? player,
         status: 'won',
         winner: outcome.winner,
         winningLine: outcome.winningLine,
@@ -474,12 +476,12 @@ function replayHistory(
       const owner = mines[move.cellIndex]
       if (owner !== undefined && owner !== move.player) {
         delete mines[move.cellIndex]
-        board[move.cellIndex] = move.player
-        if (move.capturedIndex !== undefined && board[move.capturedIndex] === owner) {
-          board[move.capturedIndex] = move.player
+        board[move.cellIndex] = owner
+        if (move.capturedIndex !== undefined && board[move.capturedIndex] === move.player) {
+          board[move.capturedIndex] = owner
         } else {
-          const capture = findCaptureTarget(board, history.slice(0, hi), owner)
-          if (capture !== null && board[capture] === owner) board[capture] = move.player
+          const capture = findCaptureTarget(board, history.slice(0, hi), move.player)
+          if (capture !== null && board[capture] === move.player) board[capture] = owner
         }
       } else {
         if (owner === move.player) delete mines[move.cellIndex]

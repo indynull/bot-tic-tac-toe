@@ -29,8 +29,10 @@ export function getStatusMessage(game: GameState, aiThinking: boolean): string {
   if (game.lastMineEvent) {
     const e = game.lastMineEvent
     const steal =
-      e.capturedIndex !== null ? ` and took over one of ${e.owner}'s marks` : ''
-    return `Mine! ${e.stepper} hit ${e.owner}'s trap — claimed the cell${steal}.`
+      e.capturedIndex !== null
+        ? ` and took over one of ${e.stepper}'s marks`
+        : ''
+    return `Mine! ${e.stepper} hit ${e.owner}'s trap — ${e.owner} claims the cell${steal}. ${game.currentPlayer}'s turn.`
   }
 
   if (game.justPlantedMine) {

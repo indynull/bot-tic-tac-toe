@@ -106,8 +106,8 @@ export function SettingsModal({
           {settings.mineMode && (
             <p className={styles.hint} role="note">
               Each side gets 2 hidden mines per game. Planting uses your turn (toggle “Plant mine”
-              under the board). If the opponent steps on your mine, <strong>they</strong> claim that
-              cell and convert one of your marks — traps are risky area denial, not free wins.
+              under the board). If the opponent steps on <strong>your</strong> mine, <strong>you</strong>{' '}
+              get that cell and may convert one of <strong>their</strong> marks — they wasted the turn.
               Starts a new game when toggled.
             </p>
           )}
