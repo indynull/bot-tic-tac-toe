@@ -129,4 +129,30 @@ describe('mine mode', () => {
     expect(r.state.currentPlayer).toBe('O')
     expect(r.state.mines[2]).toBe('X')
   })
+
+  it('first-move plant as human X leaves AI to act (isAiTurn)', async () => {
+    const { isAiTurn, chooseAiAction } = await import('../src/game')
+    let g = createGame({
+      settings: {
+        mineMode: true,
+        mode: 'vs_ai',
+        humanPlayer: 'X',
+        firstPlayer: 'X',
+        difficulty: 'hard',
+      },
+    })
+    const planted = plantMine(g, 4)
+    expect(planted.ok).toBe(true)
+    if (!planted.ok) return
+    g = planted.state
+    expect(isAiTurn(g)).toBe(true)
+    const action = chooseAiAction(g)
+    const played =
+      action.type === 'plant'
+        ? plantMine(g, action.cellIndex)
+        : applyMove(g, action.cellIndex)
+    expect(played.ok).toBe(true)
+    if (!played.ok) return
+    expect(isAiTurn(played.state)).toBe(false)
+  })
 })
