@@ -31,11 +31,40 @@ export interface Settings {
   difficulty: Difficulty
   theme: Theme
   soundEnabled: boolean
+  /**
+   * Mine mode: plant hidden traps (uses a turn). If the opponent steps on your mine,
+   * they claim that cell and convert one of your marks — risky area denial.
+   */
+  mineMode: boolean
 }
+
+/** How many mines each player may plant per game (fresh board / after reset). */
+export const MINES_PER_PLAYER = 2
+
+export type MoveKind = 'place' | 'plant'
 
 export interface Move {
   cellIndex: number
   player: Player
+  /** Default `place` for backwards-compatible history. */
+  kind?: MoveKind
+  /** On mine trigger: board index whose mark was stolen from the trap owner. */
+  capturedIndex?: number
+  /** On mine trigger: who owned the mine that detonated. */
+  triggeredMineOwner?: Player
+}
+
+/** Cell index → player who planted a hidden mine there (cell must be empty). */
+export type MineMap = Record<number, Player>
+
+export interface MineEvent {
+  /** Who stepped on the mine. */
+  stepper: Player
+  /** Who planted it. */
+  owner: Player
+  cellIndex: number
+  /** Mark stolen from owner, if any. */
+  capturedIndex: number | null
 }
 
 export interface GameState {
@@ -63,6 +92,14 @@ export interface GameState {
   justGrew: boolean
   /** Board size before the most recent in-place growth (status copy); null if never grew this session. */
   previousBoardSize: BoardSize | null
+  /** Hidden mines on empty cells (only owners should see theirs in the UI). */
+  mines: MineMap
+  /** Mines each side may still plant. */
+  minesRemaining: Record<Player, number>
+  /** Last mine detonation (status copy); cleared on next action. */
+  lastMineEvent: MineEvent | null
+  /** Last action was planting a mine (status copy). */
+  justPlantedMine: boolean
 }
 
 export type MoveErrorReason =
@@ -70,6 +107,9 @@ export type MoveErrorReason =
   | 'cell_occupied'
   | 'invalid_index'
   | 'wrong_turn'
+  | 'mines_disabled'
+  | 'no_mines_left'
+  | 'cell_has_mine'
 
 export type ApplyMoveResult =
   | { ok: true; state: GameState }
@@ -158,6 +198,12 @@ export const DEFAULT_SETTINGS: Settings = {
   difficulty: 'impossible',
   theme: 'light',
   soundEnabled: false,
+  mineMode: false,
+}
+
+export function initialMinesRemaining(mineMode: boolean): Record<Player, number> {
+  if (!mineMode) return { X: 0, O: 0 }
+  return { X: MINES_PER_PLAYER, O: MINES_PER_PLAYER }
 }
 
 export const STORAGE_KEY = 'ttt-v1'

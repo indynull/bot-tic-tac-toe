@@ -26,6 +26,18 @@ function boardPrefix(game: GameState): string {
 export function getStatusMessage(game: GameState, aiThinking: boolean): string {
   if (aiThinking) return aiThinkingMessage(game.settings.difficulty)
 
+  if (game.lastMineEvent) {
+    const e = game.lastMineEvent
+    const steal =
+      e.capturedIndex !== null ? ` and took over one of ${e.owner}'s marks` : ''
+    return `Mine! ${e.stepper} hit ${e.owner}'s trap — claimed the cell${steal}.`
+  }
+
+  if (game.justPlantedMine) {
+    const planter = game.currentPlayer === 'X' ? 'O' : 'X'
+    return `${planter} planted a hidden mine (${game.minesRemaining[planter]} left for them). ${game.currentPlayer}'s turn.`
+  }
+
   if (game.justGrew && game.previousBoardSize != null) {
     const from = game.previousBoardSize
     const to = game.boardSize
@@ -57,17 +69,21 @@ export function getStatusMessage(game: GameState, aiThinking: boolean): string {
   }
 
   const prefix = boardPrefix(game)
+  const mineBit =
+    game.settings.mineMode
+      ? ` · 💣 ${game.minesRemaining[game.currentPlayer]} mine${game.minesRemaining[game.currentPlayer] === 1 ? '' : 's'} left`
+      : ''
   if (game.settings.mode === 'local_pvp') {
-    return `${prefix}${game.currentPlayer}'s turn — pass the device`
+    return `${prefix}${game.currentPlayer}'s turn${mineBit} — pass the device`
   }
   if (game.currentPlayer === game.settings.humanPlayer) {
     if (game.settings.difficulty === 'impossible') {
-      return `${prefix}Your turn (${game.currentPlayer}) — play perfectly or lose`
+      return `${prefix}Your turn (${game.currentPlayer})${mineBit} — play perfectly or lose`
     }
     if (game.settings.difficulty === 'hard') {
-      return `${prefix}Your turn (${game.currentPlayer}) — one mistake and it's over`
+      return `${prefix}Your turn (${game.currentPlayer})${mineBit} — one mistake and it's over`
     }
-    return `${prefix}Your turn (${game.currentPlayer})`
+    return `${prefix}Your turn (${game.currentPlayer})${mineBit}`
   }
   return `${prefix}Computer's turn (${game.currentPlayer})`
 }
