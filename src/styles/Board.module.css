@@ -28,6 +28,20 @@
   width: min(100%, 520px);
 }
 
+.size8 {
+  width: min(100%, 560px);
+}
+
+.size9 {
+  width: min(100%, 600px);
+}
+
+.size8 .cell,
+.size9 .cell {
+  min-width: 0;
+  min-height: 0;
+}
+
 .drawBoard {
   outline: 2px dashed var(--border);
   outline-offset: 6px;

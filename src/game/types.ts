@@ -7,11 +7,12 @@ export type GameMode = 'local_pvp' | 'vs_ai'
 export type Difficulty = 'easy' | 'medium' | 'hard' | 'impossible'
 export type Theme = 'light' | 'dark'
 
-/** Square board dimension (3 = classic 3×3). Escalates after draws. */
-export type BoardSize = 3 | 4 | 5 | 6 | 7
+/** Square board dimension (3 = classic 3×3). Escalates after draws up to mini-gomoku sizes. */
+export type BoardSize = 3 | 4 | 5 | 6 | 7 | 8 | 9
 
 export const MIN_BOARD_SIZE: BoardSize = 3
-export const MAX_BOARD_SIZE: BoardSize = 7
+/** Ladder ceiling: 9×9 with 5-in-a-row (small gomoku); further gomoku identity is a later pass. */
+export const MAX_BOARD_SIZE: BoardSize = 9
 export const DEFAULT_BOARD_SIZE: BoardSize = 3
 
 export const DIFFICULTY_ORDER: readonly Difficulty[] = ['easy', 'medium', 'hard', 'impossible'] as const
@@ -38,7 +39,7 @@ export interface Move {
 }
 
 export interface GameState {
-  /** N for an N×N board this game (3–7). */
+  /** N for an N×N board this game (3–9). */
   boardSize: BoardSize
   /** Marks in a row needed to win (see `winLengthForBoard`). */
   winLength: number
@@ -104,8 +105,9 @@ export function nextBoardSize(current: BoardSize): BoardSize {
 }
 
 /**
- * Win length for an N×N board. Full-line wins on 6×6/7×7 are nearly unwinnable,
- * so we cap at 5-in-a-row and use 4-in-a-row on 4×4/5×5 for a playable ladder.
+ * Win length for an N×N board. Full-line wins on large N are nearly unwinnable,
+ * so we use 4-in-a-row on 4×4/5×5 and lock **5-in-a-row** from 6×6 upward
+ * (gomoku-style k on the growing ladder; branding pass comes later).
  */
 export function winLengthForBoard(boardSize: BoardSize): number {
   if (boardSize <= 3) return 3
@@ -134,6 +136,12 @@ export function aiPolicyNote(boardSize: BoardSize, difficulty: Difficulty): stri
     if (difficulty === 'hard') return 'Optimal minimax on 3×3'
     if (difficulty === 'medium') return 'Tactical (wins/blocks/forks)'
     return 'Mostly random with occasional tactics'
+  }
+  if (difficulty === 'impossible') {
+    return `Deep minimax on ${boardSize}×${boardSize} (≤200ms budget; not proven optimal)`
+  }
+  if (difficulty === 'hard') {
+    return `Tactical play on ${boardSize}×${boardSize} (wins/blocks/forks; sub-second)`
   }
   return `Tactical play on ${boardSize}×${boardSize} (sub-second; not optimal search)`
 }

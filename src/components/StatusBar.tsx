@@ -51,7 +51,7 @@ export function getStatusMessage(game: GameState, aiThinking: boolean): string {
 
   if (game.status === 'draw') {
     if (game.boardSize >= MAX_BOARD_SIZE) {
-      return "It's a draw — max board (7×7); no further growth"
+      return `It's a draw — max board (${MAX_BOARD_SIZE}×${MAX_BOARD_SIZE}); no further growth`
     }
     return "It's a draw"
   }

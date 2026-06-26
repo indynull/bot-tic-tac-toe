@@ -193,7 +193,7 @@ export interface GrowPlan {
  * rare with top-left embed). We intentionally do **not** block growth when the
  * next player could win on their first move on the new ring; that was stopping
  * escalation after a single 3→4 growth because 4-in-a-row threats appeared often.
- * Growth keeps going until max size (7×7), where a full board scores a real draw.
+ * Growth keeps going until max size (9×9), where a full board scores a real draw.
  */
 export function planBoardGrowth(
   board: Cell[],

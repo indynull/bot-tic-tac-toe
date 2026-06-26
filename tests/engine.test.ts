@@ -255,7 +255,7 @@ describe('in-place board growth', () => {
     expect(g.settings.difficulty).toBe('easy')
   })
 
-  it('records a real draw at 7×7 when full with no 5-in-a-row', () => {
+  it('grows 7×7 → 8×8 on a full board with no 5-in-a-row', () => {
     const size = 7 as const
     const pattern = ['X', 'X', 'X', 'X', 'O', 'O', 'O'] as const
     const board: ('X' | 'O' | null)[] = Array(49).fill(null)
@@ -279,10 +279,59 @@ describe('in-place board growth', () => {
     const r = applyMove(g, 48)
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    expect(r.state.boardSize).toBe(7)
+    expect(r.state.boardSize).toBe(8)
+    expect(r.state.status).toBe('in_progress')
+    expect(r.state.justGrew).toBe(true)
+    expect(r.state.winLength).toBe(5)
+  })
+
+  it('records a real draw at 9×9 when full with no 5-in-a-row', () => {
+    const size = 9 as const
+    // Period-5 stripe so no 5 consecutive identical marks in a row/col/diag segment.
+    const pattern = ['X', 'X', 'X', 'X', 'O', 'O', 'O', 'O', 'X'] as const
+    const cells = size * size
+    const board: ('X' | 'O' | null)[] = Array(cells).fill(null)
+    for (let row = 0; row < size; row++) {
+      for (let col = 0; col < size; col++) {
+        board[row * size + col] = pattern[(col + row * 2) % pattern.length]!
+      }
+    }
+    // If the stripe still forms a 5-in-a-row, fall back to a checker that is known draw-ish:
+    // alternate pairs per row offset so runs of 4 max.
+    let evalBoard = board
+    if (evaluateBoard(evalBoard, 9, 5).status !== 'draw') {
+      evalBoard = Array(cells).fill(null)
+      for (let i = 0; i < cells; i++) {
+        const row = Math.floor(i / size)
+        const col = i % size
+        evalBoard[i] = (row + Math.floor(col / 4)) % 2 === 0 ? 'X' : 'O'
+      }
+    }
+    expect(evaluateBoard(evalBoard, 9, 5).status).toBe('draw')
+    const lastIdx = cells - 1
+    const lastPlayer = evalBoard[lastIdx]!
+    evalBoard[lastIdx] = null
+    let g = createGame({ boardSize: 9, settings: { mode: 'vs_ai', difficulty: 'hard' } })
+    g = {
+      ...g,
+      board: evalBoard,
+      currentPlayer: lastPlayer,
+      moveHistory: evalBoard
+        .map((p, i) => (p ? { cellIndex: i, player: p } : null))
+        .filter((m): m is { cellIndex: number; player: 'X' | 'O' } => m !== null),
+    }
+    const r = applyMove(g, lastIdx)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.state.boardSize).toBe(9)
     expect(r.state.status).toBe('draw')
     expect(r.state.scores.draws).toBe(1)
     expect(r.state.justGrew).toBe(false)
+  })
+
+  it('winLength is 5 on 8×8 and 9×9', () => {
+    expect(createGame({ boardSize: 8 }).winLength).toBe(5)
+    expect(createGame({ boardSize: 9 }).winLength).toBe(5)
   })
 
   it('undo after growth is size-sticky', () => {

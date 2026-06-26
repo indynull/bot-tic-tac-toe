@@ -6,7 +6,7 @@ A polished, fully client-side tic-tac-toe web app with local pass-and-play, vs-c
 
 - **Local PvP** — pass-and-play on one device
 - **Vs computer** — easy / medium / hard / **impossible** (optimal minimax on 3×3; tactical/shallow on larger boards — see AI notes)
-- **Draw ladder** — a full board with no winner is a normal draw; the **next** game starts on a larger empty board (3→4→…→7) with a longer win line
+- **Draw ladder** — full board with no winner **grows in place** (marks kept, new empty ring) 3→4→…→**9**, with win length scaling toward 5-in-a-row (mini-gomoku on large boards)
 - **Session scores** — X / O / draws, persisted in `localStorage`
 - **Settings** — first player, play as X/O (vs AI), light/dark theme, sound on/off
 - **Undo** — one move in PvP; human+AI pair in vs computer (reverts ladder advance if undoing a draw)
@@ -78,24 +78,24 @@ npm run preview
 
 ### Board representation
 
-Variable **N×N** array (`boardSize` 3–7), row-major: `index = row * boardSize + col`. Cells are `null | 'X' | 'O'`. Updates are immutable (new arrays / state objects).
+Variable **N×N** array (`boardSize` 3–9), row-major: `index = row * boardSize + col`. Cells are `null | 'X' | 'O'`. Updates are immutable (new arrays / state objects).
 
 ### Engine API (highlights)
 
 - `createGame(options?)` — initial state (optional `boardSize` / `ladderSize`)
-- `applyMove(state, cellIndex)` — full board with no winner is a **draw** and advances `ladderSize` for the next game
+- `applyMove(state, cellIndex)` — full board with no winner **grows in place** until max size, then scores a draw
 - `resetGame(state, options?)` — new empty board at `ladderSize` (`resetProgression` returns to 3×3)
-- `undoMove` / `undoLastTurn` — history-based undo (pair undo in vs AI); reverts ladder advance if undoing a draw
+- `undoMove` / `undoLastTurn` — history-based undo (pair undo in vs AI); size stays sticky after growth
 - `getLegalMoves(state)` — empty cells while in progress
 - `chooseMove(state, difficulty?)` — AI policy (easy / medium / hard / impossible)
 
 ### Draw ladder (product rules)
 
-1. A full board with no winner is always a **scored draw** (game ends).
-2. The **next** new game uses a larger empty board: 3 → 4 → … up to 7 (stored as `ladderSize`).
-3. Win length scales: **3** on 3×3, **4** on 4×4/5×5, **5** on 6×6/7×7 (playable ladder).
-4. Wins keep the current size for the next game; only draws climb the ladder.
-5. Vs computer: any ladder-advancing draw tiers difficulty up one step; on 4×4–6×6 hard/impossible use shallow minimax, on 7×7 tactical only (no slips).
+1. A full board with no winner **grows in place** (embed marks top-left, new empty ring) while below max size.
+2. Ladder runs 3 → 4 → … → **9** (`MAX_BOARD_SIZE`); only a full **9×9** with no 5-in-a-row is a scored draw.
+3. Win length: **3** on 3×3, **4** on 4×4/5×5, **5** on 6×6–9×9 (gomoku-style *k* on the upper ladder).
+4. Wins keep the current size; only full-board no-wins climb/grow.
+5. Vs computer: each growth tiers difficulty up one step (cap impossible). Hard is tactical on 4×4+; impossible uses depth-limited minimax with a ≤200ms budget on large boards.
 6. **Reset ladder** clears scores and returns to classic 3×3.
 7. Fresh / corrupt storage defaults: **vs computer**, **impossible**, human plays **O** (computer opens as X). Entering vs AI from PvP floors easy/medium up to **hard**.
 
@@ -104,18 +104,15 @@ Variable **N×N** array (`boardSize` 3–7), row-major: `index = row * boardSize
 | Board | easy | medium | hard | impossible |
 |-------|------|--------|------|------------|
 | **3×3** | always takes wins; ~55% blocks/forks | tactical (~5% slips) | optimal minimax | optimal + book/forks |
-| **4×4** | always takes wins; ~55% blocks/forks | tactical (~5% slips) | shallow minimax (depth 4) | deeper shallow (depth 5) + deterministic ties |
-| **5×5** | always takes wins; ~55% blocks/forks | tactical (~5% slips) | shallow minimax (depth 1) | shallow minimax (depth 2) |
-| **6×6** | always takes wins; ~55% blocks/forks | tactical (~5% slips) | shallow minimax (depth 1) | shallow minimax (depth 1) |
-| **7×7** | always takes wins; ~55% blocks/forks | tactical (~5% slips) | **tactical only** (no slips) | **tactical only** (no slips) |
+| **4×4–9×9** | always takes wins; ~55% blocks/forks | tactical (~5% slips) | tactical (no slips) | iterative minimax (depth by size, ≤200ms) + tactics |
 
 Tier names are historical; settings copy and `aiPolicyNote()` describe the real policy. Hard/impossible are only fully optimal on classic 3×3.
 
 ## Rules (quick)
 
 1. Players alternate placing **X** and **O** on empty cells.
-2. First to **K-in-a-row** wins (K depends on board size).
-3. Full board with no winner is a **draw** — and unlocks a **bigger empty board** for the next game (up to 7×7).
+2. First to **K-in-a-row** wins (K depends on board size; **5** from 6×6 up).
+3. Full board with no winner **grows the grid in place** until **9×9**; only then is it a terminal draw.
 4. **New game** starts fresh at the ladder size; **Reset ladder** clears scores and returns to 3×3.
 5. No moves after a terminal win/draw until **New game**.
 

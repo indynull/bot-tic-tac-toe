@@ -14,17 +14,40 @@ interface BoardContext {
 
 /**
  * Depth limit for minimax. 3×3 is exhaustive (tiny tree).
- * 4×4+ stays tactical — must keep AI response well under 1s on all boards.
+ * Hard on 4×4+ stays tactical (depth 1). Impossible searches deeper but stays
+ * well under a 200ms move budget on every board size.
  */
-function maxSearchDepth(boardSize: BoardSize, _difficulty: Difficulty = 'hard'): number {
+function maxSearchDepth(boardSize: BoardSize, difficulty: Difficulty = 'hard'): number {
   if (boardSize <= 3) return 20
-  return 1
+  if (difficulty !== 'impossible') return 1
+  // Conservative depths; iterative deepening + deadline aborts long branches.
+  switch (boardSize) {
+    case 4:
+      return 5
+    case 5:
+      return 4
+    case 6:
+      return 3
+    case 7:
+      return 2
+    case 8:
+    case 9:
+      return 2
+    default:
+      return 1
+  }
 }
 
-/** Non-3×3 hard/impossible use tactical play only (sub-second AI budget). */
-function prefersTacticalHard(boardSize: BoardSize): boolean {
-  return boardSize >= 4
+/** Hard uses pure tactics on 4×4+; impossible always searches (depth-limited). */
+function prefersTacticalHard(boardSize: BoardSize, difficulty: Difficulty = 'hard'): boolean {
+  return boardSize >= 4 && difficulty !== 'impossible'
 }
+
+/** Hard ceiling for a single impossible move calculation (ms). Leave headroom under 200ms. */
+const IMPOSSIBLE_MOVE_BUDGET_MS = 160
+
+/** Sentinel: minimax aborted due to time; caller should discard incomplete root scores. */
+const SEARCH_ABORTED = -1e9
 
 /** Strategic cell weights for classic 3×3: center > corners > edges. */
 const POSITION_WEIGHT_3: readonly number[] = [3, 1, 3, 1, 5, 1, 3, 1, 3]
@@ -122,9 +145,14 @@ function orderedMoves(board: Cell[], player: Player, ctx: BoardContext): number[
   })
 }
 
+/**
+ * Leaf evaluation: center control + open-line potential (near-complete segments score high).
+ * Stronger than pure distance so depth-limited impossible play builds threats.
+ */
 function heuristicScore(board: Cell[], ctx: BoardContext, maximizingPlayer: Player): number {
   let score = 0
   const center = (ctx.boardSize - 1) / 2
+  const opp = opponent(maximizingPlayer)
   for (let i = 0; i < board.length; i++) {
     const cell = board[i]
     if (cell === null) continue
@@ -133,12 +161,54 @@ function heuristicScore(board: Cell[], ctx: BoardContext, maximizingPlayer: Play
     const weight = Math.max(0, ctx.boardSize - dist)
     score += cell === maximizingPlayer ? weight : -weight
   }
+
+  // Segment potential: reward own partial lines, penalize opponent's.
+  const k = ctx.winLength
+  const dirs: [number, number][] = [
+    [0, 1],
+    [1, 0],
+    [1, 1],
+    [1, -1],
+  ]
+  for (let row = 0; row < ctx.boardSize; row++) {
+    for (let col = 0; col < ctx.boardSize; col++) {
+      for (const [dr, dc] of dirs) {
+        const endR = row + dr * (k - 1)
+        const endC = col + dc * (k - 1)
+        if (endR < 0 || endC < 0 || endR >= ctx.boardSize || endC >= ctx.boardSize) continue
+        let mine = 0
+        let theirs = 0
+        let empty = 0
+        let r = row
+        let c = col
+        for (let i = 0; i < k; i++) {
+          const cell = board[r * ctx.boardSize + c]
+          if (cell === maximizingPlayer) mine++
+          else if (cell === opp) theirs++
+          else empty++
+          r += dr
+          c += dc
+        }
+        if (theirs === 0 && mine > 0) {
+          // Exponential: 1-in-line is mild, (k-1) is a near-win threat.
+          score += mine * mine * 4 + (mine === k - 1 ? 40 : 0)
+        } else if (mine === 0 && theirs > 0) {
+          score -= theirs * theirs * 4 + (theirs === k - 1 ? 40 : 0)
+        }
+      }
+    }
+  }
+
+  // Immediate double-threat pressure (fork readiness).
+  score += countImmediateThreats(board, maximizingPlayer, ctx) * 30
+  score -= countImmediateThreats(board, opp, ctx) * 35
   return score
 }
 
 /**
  * Minimax with depth preference (faster wins / slower losses).
  * Score from `maximizingPlayer` perspective: ~1000 win, ~-1000 loss, 0 draw.
+ * When `deadline` is finite, aborts with SEARCH_ABORTED if time runs out.
  */
 function minimax(
   board: Cell[],
@@ -149,7 +219,10 @@ function minimax(
   beta: number,
   ctx: BoardContext,
   maxDepth: number,
+  deadline: number = Infinity,
 ): number {
+  if (deadline < Infinity && performance.now() >= deadline) return SEARCH_ABORTED
+
   const outcome = evaluateBoard(board, ctx.boardSize, ctx.winLength)
   if (outcome.status === 'won') {
     return outcome.winner === maximizingPlayer ? 1000 - depth * 10 : depth * 10 - 1000
@@ -166,7 +239,18 @@ function minimax(
     let best = -Infinity
     for (const m of moves) {
       const next = setCell(board, m, current)
-      const score = minimax(next, opponent(current), maximizingPlayer, depth + 1, alpha, beta, ctx, maxDepth)
+      const score = minimax(
+        next,
+        opponent(current),
+        maximizingPlayer,
+        depth + 1,
+        alpha,
+        beta,
+        ctx,
+        maxDepth,
+        deadline,
+      )
+      if (score === SEARCH_ABORTED) return SEARCH_ABORTED
       best = Math.max(best, score)
       alpha = Math.max(alpha, best)
       if (beta <= alpha) break
@@ -177,7 +261,18 @@ function minimax(
   let best = Infinity
   for (const m of moves) {
     const next = setCell(board, m, current)
-    const score = minimax(next, opponent(current), maximizingPlayer, depth + 1, alpha, beta, ctx, maxDepth)
+    const score = minimax(
+      next,
+      opponent(current),
+      maximizingPlayer,
+      depth + 1,
+      alpha,
+      beta,
+      ctx,
+      maxDepth,
+      deadline,
+    )
+    if (score === SEARCH_ABORTED) return SEARCH_ABORTED
     best = Math.min(best, score)
     beta = Math.min(beta, best)
     if (beta <= alpha) break
@@ -185,7 +280,10 @@ function minimax(
   return best
 }
 
-/** Collect all minimax-optimal moves (same best score). */
+/**
+ * Collect minimax-optimal moves (same best score).
+ * For impossible on large boards, iteratively deepen and stop before the time budget.
+ */
 function optimalMoves(
   board: Cell[],
   aiPlayer: Player,
@@ -195,20 +293,76 @@ function optimalMoves(
   const moves = getEmptyCells(board)
   if (moves.length === 0) throw new Error('No legal moves')
 
-  const maxDepth = maxSearchDepth(ctx.boardSize, difficulty)
-  let bestScore = -Infinity
-  const best: number[] = []
+  const targetDepth = maxSearchDepth(ctx.boardSize, difficulty)
+  const useBudget = difficulty === 'impossible' && ctx.boardSize >= 4
+  const deadline = useBudget ? performance.now() + IMPOSSIBLE_MOVE_BUDGET_MS : Infinity
 
-  for (const m of moves) {
-    const next = setCell(board, m, aiPlayer)
-    const score = minimax(next, opponent(aiPlayer), aiPlayer, 0, -Infinity, Infinity, ctx, maxDepth)
-    if (score > bestScore) {
-      bestScore = score
-      best.length = 0
-      best.push(m)
-    } else if (score === bestScore) {
-      best.push(m)
+  // Order root candidates once (strong first) for better alpha-beta + early good PV.
+  const ordered = orderedMoves(board, aiPlayer, ctx)
+  let best: number[] = ordered.slice(0, 1)
+  let bestScore = -Infinity
+
+  const searchAtDepth = (
+    maxDepth: number,
+  ): { moves: number[]; score: number; timedOut: boolean; complete: boolean } => {
+    let localBest = -Infinity
+    const winners: number[] = []
+    for (const m of ordered) {
+      if (performance.now() >= deadline) {
+        return {
+          moves: winners,
+          score: localBest,
+          timedOut: true,
+          complete: false,
+        }
+      }
+      const next = setCell(board, m, aiPlayer)
+      const score = minimax(
+        next,
+        opponent(aiPlayer),
+        aiPlayer,
+        0,
+        -Infinity,
+        Infinity,
+        ctx,
+        maxDepth,
+        deadline,
+      )
+      if (score === SEARCH_ABORTED) {
+        return {
+          moves: winners,
+          score: localBest,
+          timedOut: true,
+          complete: false,
+        }
+      }
+      if (score > localBest) {
+        localBest = score
+        winners.length = 0
+        winners.push(m)
+      } else if (score === localBest) {
+        winners.push(m)
+      }
     }
+    return { moves: winners, score: localBest, timedOut: false, complete: true }
+  }
+
+  if (!useBudget) {
+    const result = searchAtDepth(targetDepth)
+    return result.moves.length > 0 ? result.moves : ordered.slice(0, 1)
+  }
+
+  // Iterative deepening: only adopt a depth if every root move finished in time.
+  for (let depth = 1; depth <= targetDepth; depth++) {
+    if (performance.now() >= deadline) break
+    const result = searchAtDepth(depth)
+    if (result.complete && result.moves.length > 0) {
+      best = result.moves
+      bestScore = result.score
+    }
+    if (result.timedOut || !result.complete) break
+    // Winning forced line — no need to search deeper.
+    if (bestScore >= 900) break
   }
 
   return best
@@ -219,7 +373,7 @@ function optimalMoves(
  * Among equally optimal lines on 3×3, pick randomly for variety.
  */
 function chooseHardMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number {
-  if (prefersTacticalHard(ctx.boardSize)) {
+  if (prefersTacticalHard(ctx.boardSize, 'hard')) {
     // No random slips on tactical rungs (discipline on 5×5+).
     return chooseMediumMove(board, aiPlayer, ctx, /*allowSlip*/ false)
   }
@@ -256,29 +410,26 @@ function openingBookMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): nu
 
 /**
  * Impossible: optimal minimax + deterministic tie-breaks + opening book on 3×3.
- * Deterministic tactical on 4×4+ (fast, no gifts; keeps replies under 1s).
+ * On 4×4–9×9: depth-limited minimax with iterative deepening (≤160ms budget),
+ * plus tactical pre-checks so instant wins/blocks never get missed.
  */
 function chooseImpossibleMove(board: Cell[], aiPlayer: Player, ctx: BoardContext): number {
-  if (prefersTacticalHard(ctx.boardSize)) {
-    // Deterministic tactical: wins, blocks, forks, priority cells — no random slips
-    const moves = getEmptyCells(board)
-    const human = opponent(aiPlayer)
-    for (const m of moves) {
-      if (evaluateBoard(setCell(board, m, aiPlayer), ctx.boardSize, ctx.winLength).winner === aiPlayer) return m
-    }
-    for (const m of moves) {
-      if (evaluateBoard(setCell(board, m, human), ctx.boardSize, ctx.winLength).winner === human) return m
-    }
-    for (const m of moves) {
-      if (createsFork(board, m, aiPlayer, ctx)) return m
-    }
-    const forkBlocks = moves.filter((m) => createsFork(board, m, human, ctx))
-    if (forkBlocks.length === 1) return forkBlocks[0]!
-    for (const p of priorityIndices(ctx.boardSize)) {
-      if (moves.includes(p)) return p
-    }
-    return moves[0]!
+  const moves = getEmptyCells(board)
+  const human = opponent(aiPlayer)
+
+  // Always take forced tactics first (cheap; minimax would agree but this is O(moves)).
+  for (const m of moves) {
+    if (evaluateBoard(setCell(board, m, aiPlayer), ctx.boardSize, ctx.winLength).winner === aiPlayer) return m
   }
+  for (const m of moves) {
+    if (evaluateBoard(setCell(board, m, human), ctx.boardSize, ctx.winLength).winner === human) return m
+  }
+  for (const m of moves) {
+    if (createsFork(board, m, aiPlayer, ctx)) return m
+  }
+  const forkBlocks = moves.filter((m) => createsFork(board, m, human, ctx))
+  if (forkBlocks.length === 1) return forkBlocks[0]!
+  // Multiple fork-blocks: prefer the one minimax/heuristic ranks highest via search below.
 
   const book = openingBookMove(board, aiPlayer, ctx)
   if (book !== null) {
@@ -328,7 +479,7 @@ function priorityIndices(boardSize: BoardSize): number[] {
 /**
  * Medium: tactical play without full minimax. Always takes wins/blocks, creates/blocks
  * forks when obvious, otherwise uses cell priority with a rare (~5%) random slip.
- * Hard/impossible 7×7 fallbacks pass allowSlip=false (Agrajag: no gifts on the top rung).
+ * Hard/impossible large-board fallbacks pass allowSlip=false (no gifts on upper rungs).
  */
 function chooseMediumMove(
   board: Cell[],

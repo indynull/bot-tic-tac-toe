@@ -30,7 +30,11 @@ export function Board({ board, boardSize, winningLine, status, disabled, onCellC
           ? styles.size5
           : boardSize === 6
             ? styles.size6
-            : styles.size7
+            : boardSize === 7
+              ? styles.size7
+              : boardSize === 8
+                ? styles.size8
+                : styles.size9
 
   return (
     <div
