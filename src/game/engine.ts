@@ -87,17 +87,22 @@ export function createGame(options: CreateGameOptions = {}): GameState {
 }
 
 /**
- * Embed marks top-left into a larger board; remap history; optionally tier up vs-AI.
+ * Embed marks into a larger board (offsets from plan); remap history; optionally tier up vs-AI.
  * Game stays in progress on the larger grid. Undo is size-sticky (does not shrink).
  */
-export function growBoardInPlace(state: GameState, toSize: BoardSize): GameState {
+export function growBoardInPlace(
+  state: GameState,
+  toSize: BoardSize,
+  rowOffset = 0,
+  colOffset = 0,
+): GameState {
   if (toSize <= state.boardSize) return state
   const fromSize = state.boardSize
   const winLength = winLengthForBoard(toSize)
-  const board = embedBoard(state.board, fromSize, toSize)
+  const board = embedBoard(state.board, fromSize, toSize, rowOffset, colOffset)
   const moveHistory = state.moveHistory.map((m) => ({
     ...m,
-    cellIndex: remapIndex(m.cellIndex, fromSize, toSize),
+    cellIndex: remapIndex(m.cellIndex, fromSize, toSize, rowOffset, colOffset),
   }))
   let settings = state.settings
   if (settings.mode === 'vs_ai' && shouldEscalateDifficulty(fromSize)) {
@@ -147,7 +152,7 @@ export function applyMove(state: GameState, cellIndex: number): ApplyMoveResult 
         moveHistory,
         justGrew: false,
       }
-      const grown = growBoardInPlace(withMove, plan.boardSize)
+      const grown = growBoardInPlace(withMove, plan.boardSize, plan.rowOffset, plan.colOffset)
       return {
         ok: true,
         state: {
@@ -157,7 +162,7 @@ export function applyMove(state: GameState, cellIndex: number): ApplyMoveResult 
         },
       }
     }
-    // Max size (or no safe growth) — scored draw
+    // Max size (or no safe growth without giving next player an instant win) — scored draw
     const scores = applyOutcomeScores(state.scores, 'draw', null)
     return {
       ok: true,

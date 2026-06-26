@@ -140,30 +140,46 @@ export function evaluateBoard(
 }
 
 /**
- * Embed an N×N board in the top-left of an M×M board (M ≥ N).
- * Existing marks keep their row/col; new ring cells are empty.
+ * Embed an N×N board into an M×M board (M ≥ N) at (rowOffset, colOffset).
+ * Default offsets (0,0) place marks in the top-left; new ring cells are empty.
  */
-export function embedBoard(board: Cell[], fromSize: BoardSize, toSize: BoardSize): Cell[] {
+export function embedBoard(
+  board: Cell[],
+  fromSize: BoardSize,
+  toSize: BoardSize,
+  rowOffset = 0,
+  colOffset = 0,
+): Cell[] {
   if (toSize < fromSize) {
     throw new Error(`Cannot embed ${fromSize}×${fromSize} into smaller ${toSize}×${toSize}`)
+  }
+  const maxOff = toSize - fromSize
+  if (rowOffset < 0 || colOffset < 0 || rowOffset > maxOff || colOffset > maxOff) {
+    throw new Error(`Embed offset (${rowOffset},${colOffset}) out of range for ${fromSize}→${toSize}`)
   }
   if (toSize === fromSize) return board.slice()
   const next = createEmptyBoard(toSize)
   for (let row = 0; row < fromSize; row++) {
     for (let col = 0; col < fromSize; col++) {
       const src = rowColToIndex(row, col, fromSize)
-      const dst = rowColToIndex(row, col, toSize)
+      const dst = rowColToIndex(row + rowOffset, col + colOffset, toSize)
       next[dst] = board[src]!
     }
   }
   return next
 }
 
-/** Remap a cell index from one board size to another (top-left embed). */
-export function remapIndex(index: number, fromSize: BoardSize, toSize: BoardSize): number {
+/** Remap a cell index from one board size to another under the given embed offset. */
+export function remapIndex(
+  index: number,
+  fromSize: BoardSize,
+  toSize: BoardSize,
+  rowOffset = 0,
+  colOffset = 0,
+): number {
   if (fromSize === toSize) return index
   const { row, col } = indexToRowCol(index, fromSize)
-  return rowColToIndex(row, col, toSize)
+  return rowColToIndex(row + rowOffset, col + colOffset, toSize)
 }
 
 /** True if `player` has at least one legal move that wins immediately. */
@@ -185,44 +201,59 @@ export interface GrowPlan {
   winLength: number
   board: Cell[]
   grew: boolean
+  /** Embed offset of the old block inside the new board (0,0 = top-left). */
+  rowOffset: number
+  colOffset: number
 }
 
-/**
- * Plan in-place growth so play can continue after a would-be draw.
- * Always climbs +1 (then larger only if embed already contains a finished win —
- * rare with top-left embed). We intentionally do **not** block growth when the
- * next player could win on their first move on the new ring; that was stopping
- * escalation after a single 3→4 growth because 4-in-a-row threats appeared often.
- * Growth keeps going until max size (9×9), where a full board scores a real draw.
- */
-export function planBoardGrowth(
-  board: Cell[],
-  boardSize: BoardSize,
-  _nextPlayer: Player,
-): GrowPlan {
-  if (boardSize >= MAX_BOARD_SIZE) {
-    return {
-      boardSize,
-      winLength: winLengthForBoard(boardSize),
-      board: board.slice(),
-      grew: false,
-    }
-  }
-
-  for (let size = boardSize + 1; size <= MAX_BOARD_SIZE; size++) {
-    const candidate = size as BoardSize
-    const winLength = winLengthForBoard(candidate)
-    const grown = embedBoard(board, boardSize, candidate)
-    // Only skip if the embedded position is already a completed win (invalid mid-game state).
-    const outcome = evaluateBoard(grown, candidate, winLength)
-    if (outcome.status === 'won') continue
-    return { boardSize: candidate, winLength, board: grown, grew: true }
-  }
-
+function noGrowthPlan(board: Cell[], boardSize: BoardSize): GrowPlan {
   return {
     boardSize,
     winLength: winLengthForBoard(boardSize),
     board: board.slice(),
     grew: false,
+    rowOffset: 0,
+    colOffset: 0,
   }
+}
+
+/**
+ * Plan in-place growth so play can continue after a would-be draw.
+ * Prefers the smallest larger size, then top-left embed, then other offsets.
+ * Rejects placements that are already a completed win **or** give `nextPlayer`
+ * an immediate winning move on the expanded board (no free wins after growth).
+ * If no safe placement exists up to max size, returns grew=false (scored draw).
+ */
+export function planBoardGrowth(
+  board: Cell[],
+  boardSize: BoardSize,
+  nextPlayer: Player,
+): GrowPlan {
+  if (boardSize >= MAX_BOARD_SIZE) {
+    return noGrowthPlan(board, boardSize)
+  }
+
+  for (let size = boardSize + 1; size <= MAX_BOARD_SIZE; size++) {
+    const candidate = size as BoardSize
+    const winLength = winLengthForBoard(candidate)
+    const maxOff = size - boardSize
+    for (let rowOffset = 0; rowOffset <= maxOff; rowOffset++) {
+      for (let colOffset = 0; colOffset <= maxOff; colOffset++) {
+        const grown = embedBoard(board, boardSize, candidate, rowOffset, colOffset)
+        const outcome = evaluateBoard(grown, candidate, winLength)
+        if (outcome.status === 'won') continue
+        if (hasImmediateWin(grown, candidate, winLength, nextPlayer)) continue
+        return {
+          boardSize: candidate,
+          winLength,
+          board: grown,
+          grew: true,
+          rowOffset,
+          colOffset,
+        }
+      }
+    }
+  }
+
+  return noGrowthPlan(board, boardSize)
 }

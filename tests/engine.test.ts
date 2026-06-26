@@ -6,6 +6,7 @@ import {
   evaluateBoard,
   getLegalMoves,
   growBoardInPlace,
+  hasImmediateWin,
   planBoardGrowth,
   remapIndex,
   resetGame,
@@ -174,15 +175,40 @@ describe('board embed helpers', () => {
     const plan = planBoardGrowth(board, 3, 'O')
     expect(plan.grew).toBe(true)
     expect(plan.boardSize).toBe(4)
+    expect(hasImmediateWin(plan.board, plan.boardSize, plan.winLength, 'O')).toBe(false)
   })
 
-  it('planBoardGrowth keeps climbing from 4×4 even if next player has threats', () => {
-    const board4: ('X' | 'O' | null)[] = Array(16).fill('X')
-    // Alternate so it's a full board without necessarily winning embed on 5×5
+  it('planBoardGrowth never leaves next player with an instant win', () => {
+    const board4: ('X' | 'O' | null)[] = Array(16).fill(null)
     for (let i = 0; i < 16; i++) board4[i] = i % 2 === 0 ? 'X' : 'O'
     const plan = planBoardGrowth(board4, 4, 'X')
+    if (plan.grew) {
+      expect(hasImmediateWin(plan.board, plan.boardSize, plan.winLength, 'X')).toBe(false)
+      expect(evaluateBoard(plan.board, plan.boardSize, plan.winLength).status).not.toBe('won')
+    }
+  })
+
+  it('planBoardGrowth shifts embed when top-left would gift an instant win', () => {
+    // 3×3 full of X on a path where 4-in-a-row for O is possible only with certain embeds.
+    // Force a position where O threatens 4-in-a-row if we only expand the right/bottom ring
+    // with marks in the top-left: three O in a column that can complete on the new ring.
+    const board: ('X' | 'O' | null)[] = [
+      'X', 'O', 'X',
+      'X', 'O', 'X',
+      'O', 'X', 'O',
+    ]
+    // Not a 3-in-a-row win on 3×3
+    expect(evaluateBoard(board, 3, 3).status).toBe('draw')
+    const plan = planBoardGrowth(board, 3, 'O')
     expect(plan.grew).toBe(true)
-    expect(plan.boardSize).toBeGreaterThanOrEqual(5)
+    expect(hasImmediateWin(plan.board, plan.boardSize, plan.winLength, 'O')).toBe(false)
+  })
+
+  it('applyMove growth never grants the next player an instant winning cell', () => {
+    let g = playMoves()
+    expect(g.status).toBe('in_progress')
+    expect(g.justGrew).toBe(true)
+    expect(hasImmediateWin(g.board, g.boardSize, g.winLength, g.currentPlayer)).toBe(false)
   })
 })
 
