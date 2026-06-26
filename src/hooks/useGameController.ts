@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   applyMove,
-  chooseAiAction,
+  chooseMove,
   createGame,
   isAiTurn,
   loadPersisted,
-  plantMine,
   resetGame,
   resetScores,
   savePersisted,
@@ -67,7 +66,6 @@ export function useGameController() {
   const [game, setGame] = useState<GameState>(initialState)
   const [aiThinking, setAiThinking] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [plantMode, setPlantMode] = useState(false)
   const aiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const gameRef = useRef(game)
   gameRef.current = game
@@ -92,65 +90,27 @@ export function useGameController() {
   }, [game.settings.theme])
 
   const runAiMove = useCallback((state: GameState) => {
-    // Pin the board we're solving for — gameRef may lag one frame behind setGame (e.g. after plant).
+    clearAiTimer()
     if (!isAiTurn(state)) {
       setAiThinking(false)
       return
     }
-    clearAiTimer()
-    gameRef.current = state
     setAiThinking(true)
     const startedAt = performance.now()
     const minThink = minThinkMs(state.settings.difficulty, state.boardSize)
-    const historyLenAtStart = state.moveHistory.length
-
-    const applyAiAction = (board: GameState) => {
-      if (!isAiTurn(board)) return false
-      const pick = chooseAiAction(board)
-      let result =
-        pick.type === 'plant'
-          ? plantMine(board, pick.cellIndex)
-          : applyMove(board, pick.cellIndex)
-      if (!result.ok && pick.type === 'plant') {
-        result = applyMove(board, chooseAiAction({
-          ...board,
-          settings: { ...board.settings, mineMode: false },
-        }).cellIndex)
-      }
-      if (!result.ok) {
-        const legal = board.board
-          .map((c, i) => (c === null ? i : -1))
-          .filter((i) => i >= 0)
-        if (legal.length > 0) result = applyMove(board, legal[0]!)
-      }
-      if (result.ok) {
-        gameRef.current = result.state
-        setGame(result.state)
-        return true
-      }
-      return false
-    }
 
     // Yield one tick so “thinking” status can paint, then compute + apply within budget.
     aiTimerRef.current = setTimeout(() => {
       aiTimerRef.current = null
       try {
-        // Prefer live ref if the human somehow moved again; otherwise use the pinned state.
-        let board =
-          isAiTurn(gameRef.current) &&
-          gameRef.current.moveHistory.length >= historyLenAtStart
-            ? gameRef.current
-            : state
-        if (!isAiTurn(board)) {
-          // Stale ref after plant — fall back to the state we were invoked with.
-          board = state
-        }
-        if (!isAiTurn(board)) {
+        const current = gameRef.current
+        if (!isAiTurn(current)) {
           setAiThinking(false)
           return
         }
-
+        const move = chooseMove(current)
         const elapsed = performance.now() - startedAt
+        // Pad for a brief think feel, but never miss the sub-second budget.
         const wait = Math.max(
           0,
           Math.min(minThink - elapsed, AI_RESPONSE_BUDGET_MS - elapsed),
@@ -158,16 +118,16 @@ export function useGameController() {
 
         const commit = () => {
           try {
-            const latest =
-              isAiTurn(gameRef.current) &&
-              gameRef.current.moveHistory.length >= historyLenAtStart
-                ? gameRef.current
-                : board
-            if (!applyAiAction(isAiTurn(latest) ? latest : board)) {
-              applyAiAction(state)
-            }
+            const latestBoard = gameRef.current
+            if (!isAiTurn(latestBoard)) return
+            const pick =
+              latestBoard.moveHistory.length === current.moveHistory.length
+                ? move
+                : chooseMove(latestBoard)
+            const result = applyMove(latestBoard, pick)
+            if (result.ok) setGame(result.state)
           } catch {
-            // no legal moves — still clear thinking flag
+            // no legal moves
           } finally {
             setAiThinking(false)
           }
@@ -187,12 +147,15 @@ export function useGameController() {
     }, 0)
   }, [clearAiTimer])
 
-  // Trigger AI when it's their turn (opening move, after plant, after human place).
+  // Trigger AI when it's their turn
   useEffect(() => {
     if (isAiTurn(game) && !aiThinking && aiTimerRef.current === null) {
       runAiMove(game)
     }
-  }, [game, game.moveHistory.length, game.currentPlayer, game.status, aiThinking, runAiMove])
+    return () => {
+      // cleanup only on unmount handled separately
+    }
+  }, [game, aiThinking, runAiMove])
 
   useEffect(() => {
     return () => clearAiTimer()
@@ -203,23 +166,12 @@ export function useGameController() {
       const current = gameRef.current
       if (aiThinking || isAiTurn(current)) return
       if (current.status !== 'in_progress') return
-      const wantPlant =
-        plantMode &&
-        current.settings.mineMode &&
-        (current.minesRemaining?.[current.currentPlayer] ?? 0) > 0
-      // Leave plant mode even if the plant fails so the UI can't get stuck "armed".
-      if (wantPlant) setPlantMode(false)
-      const result = wantPlant ? plantMine(current, cellIndex) : applyMove(current, cellIndex)
+      const result = applyMove(current, cellIndex)
       if (result.ok) {
-        gameRef.current = result.state
         setGame(result.state)
-        // Kick AI with the post-move state directly (don't wait for a render to refresh gameRef).
-        if (isAiTurn(result.state)) {
-          runAiMove(result.state)
-        }
       }
     },
-    [aiThinking, plantMode, runAiMove],
+    [aiThinking],
   )
 
   const newGame = useCallback(() => {
@@ -309,26 +261,7 @@ export function useGameController() {
     [patchSettings],
   )
 
-  const setMineMode = useCallback(
-    (mineMode: boolean) => {
-      setPlantMode(false)
-      patchSettings({ mineMode }, true)
-    },
-    [patchSettings],
-  )
-
   const boardLocked = aiThinking || isAiTurn(game) || game.status !== 'in_progress'
-  const canPlant =
-    game.settings.mineMode &&
-    !boardLocked &&
-    (game.minesRemaining[game.currentPlayer] ?? 0) > 0
-
-  /** In PvP both see only… actually both shouldn't see enemy mines; show current player's mines only. */
-  const visibleMineOwner: Player | 'both' | null = game.settings.mineMode
-    ? game.settings.mode === 'local_pvp'
-      ? game.currentPlayer
-      : game.settings.humanPlayer
-    : null
 
   return {
     game,
@@ -336,10 +269,6 @@ export function useGameController() {
     boardLocked,
     settingsOpen,
     setSettingsOpen,
-    plantMode,
-    setPlantMode,
-    canPlant,
-    visibleMineOwner,
     placeMark,
     newGame,
     doResetScores,
@@ -350,7 +279,6 @@ export function useGameController() {
     setSoundEnabled,
     setFirstPlayer,
     setHumanPlayer,
-    setMineMode,
     patchSettings,
   }
 }

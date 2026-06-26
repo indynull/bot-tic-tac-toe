@@ -581,50 +581,6 @@ export function chooseMove(state: GameState, difficulty?: Difficulty): number {
   }
 }
 
-export type AiAction = { type: 'place'; cellIndex: number } | { type: 'plant'; cellIndex: number }
-
-/**
- * AI action including optional mine planting when mine mode is on.
- * Plants only when not forced to win/block and mines remain (~20% on hard+).
- */
-export function chooseAiAction(state: GameState, difficulty?: Difficulty): AiAction {
-  const diff = difficulty ?? state.settings.difficulty
-  const aiPlayer = getAiPlayer(state)
-  const minesRemaining = state.minesRemaining ?? { X: 0, O: 0 }
-  const mines = state.mines ?? {}
-  const place = chooseMove(state, diff)
-
-  if (!state.settings.mineMode || (minesRemaining[aiPlayer] ?? 0) <= 0) {
-    return { type: 'place', cellIndex: place }
-  }
-
-  const ctx = ctxFromState(state)
-  const human = opponent(aiPlayer)
-  const legal = stateLegalMoves(state)
-  // Never plant if we can win or must block this turn.
-  for (const m of legal) {
-    if (evaluateBoard(setCell(state.board, m, aiPlayer), ctx.boardSize, ctx.winLength).winner === aiPlayer) {
-      return { type: 'place', cellIndex: m }
-    }
-  }
-  for (const m of legal) {
-    if (evaluateBoard(setCell(state.board, m, human), ctx.boardSize, ctx.winLength).winner === human) {
-      return { type: 'place', cellIndex: m }
-    }
-  }
-
-  const plantChance = diff === 'easy' ? 0.08 : diff === 'medium' ? 0.12 : 0.2
-  if (Math.random() > plantChance) {
-    return { type: 'place', cellIndex: place }
-  }
-
-  // Prefer planting on an empty cell that isn't our chosen mark (area denial elsewhere).
-  const candidates = legal.filter((i) => i !== place && mines[i] === undefined)
-  const pool = candidates.length > 0 ? candidates : legal.filter((i) => mines[i] === undefined)
-  if (pool.length === 0) return { type: 'place', cellIndex: place }
-  return { type: 'plant', cellIndex: randomChoice(pool) }
-}
-
 /** Exported for tests: optimal move on a raw 3×3 board. */
 export function chooseHardMoveForBoard(
   board: Cell[],

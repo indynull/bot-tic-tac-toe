@@ -54,28 +54,7 @@ export default function App() {
           status={ctrl.game.status}
           disabled={ctrl.boardLocked}
           onCellClick={ctrl.placeMark}
-          mines={ctrl.game.mines}
-          visibleMineOwner={ctrl.visibleMineOwner}
-          plantMode={ctrl.plantMode}
         />
-
-        {ctrl.game.settings.mineMode && (
-          <div className={appStyles.mineBar}>
-            <button
-              type="button"
-              className={ctrl.plantMode ? appStyles.mineArmed : appStyles.mineToggle}
-              disabled={!ctrl.canPlant && !ctrl.plantMode}
-              aria-pressed={ctrl.plantMode}
-              onClick={() => ctrl.setPlantMode((p) => !p)}
-            >
-              {ctrl.plantMode ? 'Plant mode ON — click an empty cell' : 'Plant mine (uses turn)'}
-            </button>
-            <span className={appStyles.mineCount}>
-              X: {ctrl.game.minesRemaining.X} · O: {ctrl.game.minesRemaining.O} mines left
-              {ctrl.plantMode ? ' · planting…' : ''}
-            </span>
-          </div>
-        )}
 
         <Controls
           game={ctrl.game}
@@ -90,11 +69,7 @@ export default function App() {
       </main>
 
       <footer className={appStyles.footer}>
-        <p>
-          Keyboard: Tab to cells, Enter/Space to place
-          {ctrl.game.settings.mineMode ? '; enable Plant mine then click a cell' : ''}. Scores &amp;
-          settings save in this browser.
-        </p>
+        <p>Keyboard: Tab to cells, Enter/Space to place. Scores &amp; settings save in this browser.</p>
       </footer>
 
       <SettingsModal
@@ -106,7 +81,6 @@ export default function App() {
         onHumanPlayer={ctrl.setHumanPlayer}
         onTheme={ctrl.setTheme}
         onSound={ctrl.setSoundEnabled}
-        onMineMode={ctrl.setMineMode}
       />
     </div>
   )

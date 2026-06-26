@@ -15,8 +15,6 @@ import type {
   BoardSize,
   Cell,
   GameState,
-  MineEvent,
-  MineMap,
   Move,
   Player,
   Scores,
@@ -26,7 +24,6 @@ import {
   DEFAULT_BOARD_SIZE,
   DEFAULT_SCORES,
   DEFAULT_SETTINGS,
-  initialMinesRemaining,
   MAX_BOARD_SIZE,
   nextDifficulty,
   shouldEscalateDifficulty,
@@ -89,28 +86,7 @@ export function createGame(options: CreateGameOptions = {}): GameState {
     ladderSize,
     justGrew: false,
     previousBoardSize: null,
-    mines: {},
-    minesRemaining: initialMinesRemaining(settings.mineMode),
-    lastMineEvent: null,
-    justPlantedMine: false,
   }
-}
-
-function cloneMines(mines: MineMap): MineMap {
-  return { ...mines }
-}
-
-/** Most recent mark belonging to `owner` on the board (by move history), or null. */
-function findCaptureTarget(board: Cell[], history: Move[], owner: Player): number | null {
-  for (let i = history.length - 1; i >= 0; i--) {
-    const m = history[i]!
-    if (m.kind === 'plant') continue
-    if (m.player === owner && board[m.cellIndex] === owner) return m.cellIndex
-  }
-  for (let i = board.length - 1; i >= 0; i--) {
-    if (board[i] === owner) return i
-  }
-  return null
 }
 
 /**
@@ -130,17 +106,7 @@ export function growBoardInPlace(
   const moveHistory = state.moveHistory.map((m) => ({
     ...m,
     cellIndex: remapIndex(m.cellIndex, fromSize, toSize, rowOffset, colOffset),
-    capturedIndex:
-      m.capturedIndex === undefined
-        ? undefined
-        : remapIndex(m.capturedIndex, fromSize, toSize, rowOffset, colOffset),
   }))
-  const mines: MineMap = {}
-  for (const [key, owner] of Object.entries(state.mines)) {
-    const fromIdx = Number(key)
-    const toIdx = remapIndex(fromIdx, fromSize, toSize, rowOffset, colOffset)
-    mines[toIdx] = owner
-  }
   let settings = state.settings
   if (settings.mode === 'vs_ai' && shouldEscalateDifficulty(fromSize)) {
     settings = { ...settings, difficulty: nextDifficulty(settings.difficulty) }
@@ -151,7 +117,6 @@ export function growBoardInPlace(
     winLength,
     board,
     moveHistory,
-    mines,
     settings,
     status: 'in_progress',
     winner: null,
@@ -159,73 +124,10 @@ export function growBoardInPlace(
     ladderSize: toSize,
     justGrew: true,
     previousBoardSize: fromSize,
-    lastMineEvent: null,
-    justPlantedMine: false,
-  }
-}
-
-/**
- * Plant a hidden mine on an empty cell (uses the turn). Mine mode only.
- * Opponent cannot see it; if they later place there they trigger takeover rules.
- */
-/** Ensure mine fields exist (older in-memory / partial states). */
-export function withMineFields(state: GameState): GameState {
-  const mineMode = state.settings?.mineMode === true
-  const mines = state.mines && typeof state.mines === 'object' ? state.mines : {}
-  const mr = state.minesRemaining
-  const minesRemaining =
-    mr && typeof mr.X === 'number' && typeof mr.O === 'number'
-      ? { X: mr.X, O: mr.O }
-      : initialMinesRemaining(mineMode)
-  return {
-    ...state,
-    settings: { ...DEFAULT_SETTINGS, ...state.settings, mineMode },
-    mines: cloneMines(mines),
-    minesRemaining,
-    lastMineEvent: state.lastMineEvent ?? null,
-    justPlantedMine: state.justPlantedMine === true,
-  }
-}
-
-export function plantMine(state: GameState, cellIndex: number): ApplyMoveResult {
-  state = withMineFields(state)
-  if (!state.settings.mineMode) return { ok: false, reason: 'mines_disabled' }
-  if (state.status !== 'in_progress') return { ok: false, reason: 'game_over' }
-  if (!isValidIndex(cellIndex, state.boardSize)) return { ok: false, reason: 'invalid_index' }
-  if (state.board[cellIndex] !== null) return { ok: false, reason: 'cell_occupied' }
-  if (state.mines[cellIndex] !== undefined) return { ok: false, reason: 'cell_has_mine' }
-
-  const player = state.currentPlayer
-  if ((state.minesRemaining[player] ?? 0) <= 0) return { ok: false, reason: 'no_mines_left' }
-
-  const mines = cloneMines(state.mines)
-  mines[cellIndex] = player
-  const minesRemaining = {
-    X: state.minesRemaining.X,
-    O: state.minesRemaining.O,
-    [player]: state.minesRemaining[player] - 1,
-  }
-  const move: Move = { cellIndex, player, kind: 'plant' }
-  const nextPlayer = opponent(player)
-
-  return {
-    ok: true,
-    state: {
-      ...state,
-      mines,
-      minesRemaining,
-      moveHistory: [...state.moveHistory, move],
-      currentPlayer: nextPlayer,
-      status: 'in_progress',
-      justGrew: false,
-      justPlantedMine: true,
-      lastMineEvent: null,
-    },
   }
 }
 
 export function applyMove(state: GameState, cellIndex: number): ApplyMoveResult {
-  state = withMineFields(state)
   if (state.status !== 'in_progress') {
     return { ok: false, reason: 'game_over' }
   }
@@ -237,67 +139,26 @@ export function applyMove(state: GameState, cellIndex: number): ApplyMoveResult 
   }
 
   const player = state.currentPlayer
-  let board = state.board.slice()
-  let mines = cloneMines(state.mines)
-  let lastMineEvent: MineEvent | null = null
-  let capturedIndex: number | undefined
-  let triggeredMineOwner: Player | undefined
-
-  const mineOwner = mines[cellIndex]
-  // Enemy mine: trap favors the **owner** — they get the cell and may convert one of the
-  // stepper's marks (take over the victim's position). Stepper still spends their turn.
-  if (mineOwner !== undefined && mineOwner !== player) {
-    delete mines[cellIndex]
-    board[cellIndex] = mineOwner
-    const capture = findCaptureTarget(board, state.moveHistory, player)
-    if (capture !== null && capture !== cellIndex && board[capture] === player) {
-      board[capture] = mineOwner
-      capturedIndex = capture
-    }
-    triggeredMineOwner = mineOwner
-    lastMineEvent = {
-      stepper: player,
-      owner: mineOwner,
-      cellIndex,
-      capturedIndex: capturedIndex ?? null,
-    }
-  } else {
-    // Own mine or no mine — normal place; clear own mine if stepping on it
-    if (mineOwner === player) delete mines[cellIndex]
-    board = setCell(board, cellIndex, player)
-  }
-
+  const board = setCell(state.board, cellIndex, player)
   const outcome = evaluateBoard(board, state.boardSize, state.winLength)
-  const move: Move = {
-    cellIndex,
-    player,
-    kind: 'place',
-    capturedIndex,
-    triggeredMineOwner,
-  }
+  const move: Move = { cellIndex, player }
   const moveHistory = [...state.moveHistory, move]
   const nextPlayer = opponent(player)
-  const basePatch = {
-    mines,
-    lastMineEvent,
-    justPlantedMine: false as const,
-  }
 
   // Full board, no win → grow in place and keep playing when possible
   if (outcome.status === 'draw') {
-    return finalizeGrowthOrDraw(state, board, moveHistory, nextPlayer, player, basePatch)
+    return finalizeGrowthOrDraw(state, board, moveHistory, nextPlayer, player)
   }
 
+  let scores = state.scores
   if (outcome.status === 'won') {
-    const scores = applyOutcomeScores(state.scores, outcome.status, outcome.winner)
+    scores = applyOutcomeScores(state.scores, outcome.status, outcome.winner)
     return {
       ok: true,
       state: {
         ...state,
-        ...basePatch,
         board,
-        // Prefer actual winner (mine owner can win on the trap without being the stepper).
-        currentPlayer: outcome.winner ?? player,
+        currentPlayer: player,
         status: 'won',
         winner: outcome.winner,
         winningLine: outcome.winningLine,
@@ -315,7 +176,7 @@ export function applyMove(state: GameState, cellIndex: number): ApplyMoveResult 
     state.boardSize < MAX_BOARD_SIZE &&
     !positionHasWinningPotential(board, state.boardSize, state.winLength)
   ) {
-    const grown = finalizeGrowthOrDraw(state, board, moveHistory, nextPlayer, player, basePatch)
+    const grown = finalizeGrowthOrDraw(state, board, moveHistory, nextPlayer, player)
     if (grown.ok && (grown.state.justGrew || grown.state.status === 'draw')) {
       return grown
     }
@@ -325,24 +186,17 @@ export function applyMove(state: GameState, cellIndex: number): ApplyMoveResult 
     ok: true,
     state: {
       ...state,
-      ...basePatch,
       board,
       currentPlayer: nextPlayer,
       status: 'in_progress',
       winner: null,
       winningLine: null,
       moveHistory,
-      scores: state.scores,
+      scores,
       ladderSize: state.ladderSize,
       justGrew: false,
     },
   }
-}
-
-type MineBoardPatch = {
-  mines: MineMap
-  lastMineEvent: MineEvent | null
-  justPlantedMine: boolean
 }
 
 /**
@@ -354,17 +208,11 @@ function finalizeGrowthOrDraw(
   moveHistory: Move[],
   nextPlayer: Player,
   lastPlayer: Player,
-  minePatch: MineBoardPatch = {
-    mines: state.mines,
-    lastMineEvent: null,
-    justPlantedMine: false,
-  },
 ): ApplyMoveResult {
   const plan = planBoardGrowth(board, state.boardSize, nextPlayer)
   if (plan.grew) {
     const withMove: GameState = {
       ...state,
-      ...minePatch,
       board,
       moveHistory,
       justGrew: false,
@@ -384,7 +232,6 @@ function finalizeGrowthOrDraw(
     ok: true,
     state: {
       ...state,
-      ...minePatch,
       board,
       currentPlayer: lastPlayer,
       status: 'draw',
@@ -447,63 +294,18 @@ export function updateSettings(state: GameState, partial: Partial<Settings>): Ga
   }
 }
 
-/**
- * Replay history onto a fresh board at `boardSize` (size-sticky undo; ignores growth).
- * Reconstructs marks, mines, and remaining plant charges.
- */
-function replayHistory(
-  settings: Settings,
-  boardSize: BoardSize,
-  history: Move[],
-): {
-  board: Cell[]
-  mines: MineMap
-  minesRemaining: Record<Player, number>
-  currentPlayer: Player
-} {
-  const board = createEmptyBoard(boardSize)
-  const mines: MineMap = {}
-  const minesRemaining = initialMinesRemaining(settings.mineMode)
-  let currentPlayer = settings.firstPlayer
-
-  for (let hi = 0; hi < history.length; hi++) {
-    const move = history[hi]!
-    const kind = move.kind ?? 'place'
-    if (kind === 'plant') {
-      mines[move.cellIndex] = move.player
-      minesRemaining[move.player] = Math.max(0, minesRemaining[move.player] - 1)
-    } else {
-      const owner = mines[move.cellIndex]
-      if (owner !== undefined && owner !== move.player) {
-        delete mines[move.cellIndex]
-        board[move.cellIndex] = owner
-        if (move.capturedIndex !== undefined && board[move.capturedIndex] === move.player) {
-          board[move.capturedIndex] = owner
-        } else {
-          const capture = findCaptureTarget(board, history.slice(0, hi), move.player)
-          if (capture !== null && board[capture] === move.player) board[capture] = owner
-        }
-      } else {
-        if (owner === move.player) delete mines[move.cellIndex]
-        board[move.cellIndex] = move.player
-      }
-    }
-    currentPlayer = opponent(move.player)
-  }
-
-  return { board, mines, minesRemaining, currentPlayer }
-}
-
 /** Undo one move. In vs_ai, callers should typically undo twice (human+AI pair). */
 export function undoMove(state: GameState): GameState {
   if (state.moveHistory.length === 0) return state
 
   const history = state.moveHistory.slice(0, -1)
-  const { board, mines, minesRemaining, currentPlayer } = replayHistory(
-    state.settings,
-    state.boardSize,
-    history,
-  )
+  const board = createEmptyBoard(state.boardSize)
+  let currentPlayer = state.settings.firstPlayer
+
+  for (const move of history) {
+    board[move.cellIndex] = move.player
+    currentPlayer = opponent(move.player)
+  }
 
   const outcome = evaluateBoard(board, state.boardSize, state.winLength)
 
@@ -518,8 +320,6 @@ export function undoMove(state: GameState): GameState {
   return {
     ...state,
     board,
-    mines,
-    minesRemaining,
     currentPlayer: outcome.status === 'in_progress' ? currentPlayer : state.currentPlayer,
     status: outcome.status,
     winner: outcome.winner,
@@ -527,8 +327,6 @@ export function undoMove(state: GameState): GameState {
     moveHistory: history,
     scores,
     justGrew: false,
-    justPlantedMine: false,
-    lastMineEvent: null,
   }
 }
 

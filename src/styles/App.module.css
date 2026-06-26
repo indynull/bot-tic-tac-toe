@@ -27,43 +27,6 @@
   font-size: 0.95rem;
 }
 
-.mineBar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  margin: 0;
-}
-
-.mineToggle,
-.mineArmed {
-  font: inherit;
-  font-size: 0.9rem;
-  font-weight: 600;
-  padding: 0.45rem 0.85rem;
-  border-radius: var(--radius);
-  border: 2px solid var(--border);
-  background: var(--cell-bg);
-  color: var(--text);
-  cursor: pointer;
-}
-
-.mineToggle:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.mineArmed {
-  border-color: #f59e0b;
-  background: color-mix(in srgb, #f59e0b 18%, var(--cell-bg));
-}
-
-.mineCount {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-}
-
 .main {
   flex: 1;
   display: flex;

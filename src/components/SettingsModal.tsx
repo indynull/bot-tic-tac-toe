@@ -12,7 +12,6 @@ interface SettingsModalProps {
   onHumanPlayer: (p: Player) => void
   onTheme: (t: Theme) => void
   onSound: (enabled: boolean) => void
-  onMineMode: (enabled: boolean) => void
 }
 
 export function SettingsModal({
@@ -24,7 +23,6 @@ export function SettingsModal({
   onHumanPlayer,
   onTheme,
   onSound,
-  onMineMode,
 }: SettingsModalProps) {
   if (!open) return null
 
@@ -94,23 +92,6 @@ export function SettingsModal({
             />
             <span>Sound effects</span>
           </label>
-
-          <label className={styles.check}>
-            <input
-              type="checkbox"
-              checked={settings.mineMode}
-              onChange={(e) => onMineMode(e.target.checked)}
-            />
-            <span>Mine mode (crazy)</span>
-          </label>
-          {settings.mineMode && (
-            <p className={styles.hint} role="note">
-              Each side gets 2 hidden mines per game. Planting uses your turn (toggle “Plant mine”
-              under the board). If the opponent steps on <strong>your</strong> mine, <strong>you</strong>{' '}
-              get that cell and may convert one of <strong>their</strong> marks — they wasted the turn.
-              Starts a new game when toggled.
-            </p>
-          )}
         </div>
 
         <footer className={styles.footer}>

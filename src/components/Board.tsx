@@ -1,4 +1,4 @@
-import type { BoardSize, Cell, MineMap, Player } from '../game'
+import type { BoardSize, Cell, Player } from '../game'
 import { indexToRowCol } from '../game'
 import styles from '../styles/Board.module.css'
 
@@ -9,39 +9,16 @@ interface BoardProps {
   status: 'in_progress' | 'won' | 'draw'
   disabled: boolean
   onCellClick: (index: number) => void
-  /** Hidden mines — only show cells owned by `visibleMineOwner` (current human / both in PvP). */
-  mines?: MineMap
-  visibleMineOwner?: Player | 'both' | null
-  /** When true, click plants a mine instead of placing a mark. */
-  plantMode?: boolean
 }
 
-function cellLabel(
-  index: number,
-  value: Cell,
-  boardSize: BoardSize,
-  hasOwnMine: boolean,
-  plantMode: boolean,
-): string {
+function cellLabel(index: number, value: Cell, boardSize: BoardSize): string {
   const { row, col } = indexToRowCol(index, boardSize)
   const pos = `Row ${row + 1}, column ${col + 1}`
-  if (value !== null) return `${pos}, ${value}`
-  if (hasOwnMine) return `${pos}, your mine`
-  if (plantMode) return `${pos}, empty, plant mine`
-  return `${pos}, empty`
+  if (value === null) return `${pos}, empty`
+  return `${pos}, ${value}`
 }
 
-export function Board({
-  board,
-  boardSize,
-  winningLine,
-  status,
-  disabled,
-  onCellClick,
-  mines = {},
-  visibleMineOwner = null,
-  plantMode = false,
-}: BoardProps) {
+export function Board({ board, boardSize, winningLine, status, disabled, onCellClick }: BoardProps) {
   const winSet = new Set(winningLine ?? [])
   const isDraw = status === 'draw'
   const sizeClass =
@@ -61,7 +38,7 @@ export function Board({
 
   return (
     <div
-      className={`${styles.board} ${sizeClass} ${isDraw ? styles.drawBoard : ''} ${plantMode ? styles.plantMode : ''}`}
+      className={`${styles.board} ${sizeClass} ${isDraw ? styles.drawBoard : ''}`}
       role="grid"
       aria-label={`Tic-tac-toe board ${boardSize} by ${boardSize}`}
       style={{ ['--board-n' as string]: boardSize }}
@@ -69,10 +46,6 @@ export function Board({
       {board.map((cell, index) => {
         const isWin = winSet.has(index)
         const occupied = cell !== null
-        const mineOwner = mines[index]
-        const showMine =
-          mineOwner !== undefined &&
-          (visibleMineOwner === 'both' || visibleMineOwner === mineOwner)
         const canPlay = !disabled && !occupied
         return (
           <button
@@ -85,24 +58,15 @@ export function Board({
               occupied ? styles.occupied : '',
               cell === 'X' ? styles.markX : '',
               cell === 'O' ? styles.markO : '',
-              showMine ? styles.mined : '',
             ]
               .filter(Boolean)
               .join(' ')}
-            aria-label={cellLabel(index, cell, boardSize, showMine, plantMode && canPlay)}
+            aria-label={cellLabel(index, cell, boardSize)}
             aria-disabled={!canPlay}
             disabled={!canPlay}
             onClick={() => canPlay && onCellClick(index)}
           >
-            {cell ? (
-              <span className={styles.mark} aria-hidden="true">
-                {cell}
-              </span>
-            ) : showMine ? (
-              <span className={styles.mineMark} aria-hidden="true">
-                💣
-              </span>
-            ) : null}
+            {cell ? <span className={styles.mark} aria-hidden="true">{cell}</span> : null}
           </button>
         )
       })}
