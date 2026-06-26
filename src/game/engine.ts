@@ -6,6 +6,7 @@ import {
   isValidIndex,
   opponent,
   planBoardGrowth,
+  positionHasWinningPotential,
   remapIndex,
   setCell,
 } from './board'
@@ -22,6 +23,7 @@ import {
   DEFAULT_BOARD_SIZE,
   DEFAULT_SCORES,
   DEFAULT_SETTINGS,
+  MAX_BOARD_SIZE,
   nextDifficulty,
   shouldEscalateDifficulty,
   winLengthForBoard,
@@ -140,39 +142,25 @@ export function applyMove(state: GameState, cellIndex: number): ApplyMoveResult 
   const outcome = evaluateBoard(board, state.boardSize, state.winLength)
   const move: Move = { cellIndex, player }
   const moveHistory = [...state.moveHistory, move]
+  const nextPlayer = opponent(player)
 
   // Full board, no win → grow in place and keep playing when possible
   if (outcome.status === 'draw') {
-    const nextPlayer = opponent(player)
-    const plan = planBoardGrowth(board, state.boardSize, nextPlayer)
-    if (plan.grew) {
-      const withMove: GameState = {
-        ...state,
-        board,
-        moveHistory,
-        justGrew: false,
-      }
-      const grown = growBoardInPlace(withMove, plan.boardSize, plan.rowOffset, plan.colOffset)
-      return {
-        ok: true,
-        state: {
-          ...grown,
-          currentPlayer: nextPlayer,
-          scores: state.scores,
-        },
-      }
-    }
-    // Max size (or no safe growth without giving next player an instant win) — scored draw
-    const scores = applyOutcomeScores(state.scores, 'draw', null)
+    return finalizeGrowthOrDraw(state, board, moveHistory, nextPlayer, player)
+  }
+
+  let scores = state.scores
+  if (outcome.status === 'won') {
+    scores = applyOutcomeScores(state.scores, outcome.status, outcome.winner)
     return {
       ok: true,
       state: {
         ...state,
         board,
         currentPlayer: player,
-        status: 'draw',
-        winner: null,
-        winningLine: null,
+        status: 'won',
+        winner: outcome.winner,
+        winningLine: outcome.winningLine,
         moveHistory,
         scores,
         ladderSize: state.boardSize,
@@ -181,9 +169,16 @@ export function applyMove(state: GameState, cellIndex: number): ApplyMoveResult 
     }
   }
 
-  let scores = state.scores
-  if (outcome.status === 'won') {
-    scores = applyOutcomeScores(state.scores, outcome.status, outcome.winner)
+  // In progress but every k-in-a-row line is already blocked for both sides (empties remain).
+  // Grow now so players aren't stuck filling a dead board by hand.
+  if (
+    state.boardSize < MAX_BOARD_SIZE &&
+    !positionHasWinningPotential(board, state.boardSize, state.winLength)
+  ) {
+    const grown = finalizeGrowthOrDraw(state, board, moveHistory, nextPlayer, player)
+    if (grown.ok && (grown.state.justGrew || grown.state.status === 'draw')) {
+      return grown
+    }
   }
 
   return {
@@ -191,13 +186,59 @@ export function applyMove(state: GameState, cellIndex: number): ApplyMoveResult 
     state: {
       ...state,
       board,
-      currentPlayer: outcome.status === 'in_progress' ? opponent(player) : player,
-      status: outcome.status,
-      winner: outcome.winner,
-      winningLine: outcome.winningLine,
+      currentPlayer: nextPlayer,
+      status: 'in_progress',
+      winner: null,
+      winningLine: null,
       moveHistory,
       scores,
-      ladderSize: outcome.status === 'won' ? state.boardSize : state.ladderSize,
+      ladderSize: state.ladderSize,
+      justGrew: false,
+    },
+  }
+}
+
+/**
+ * Attempt in-place growth for `nextPlayer` to move; otherwise score a draw.
+ */
+function finalizeGrowthOrDraw(
+  state: GameState,
+  board: Cell[],
+  moveHistory: Move[],
+  nextPlayer: Player,
+  lastPlayer: Player,
+): ApplyMoveResult {
+  const plan = planBoardGrowth(board, state.boardSize, nextPlayer)
+  if (plan.grew) {
+    const withMove: GameState = {
+      ...state,
+      board,
+      moveHistory,
+      justGrew: false,
+    }
+    const grown = growBoardInPlace(withMove, plan.boardSize, plan.rowOffset, plan.colOffset)
+    return {
+      ok: true,
+      state: {
+        ...grown,
+        currentPlayer: nextPlayer,
+        scores: state.scores,
+      },
+    }
+  }
+  const scores = applyOutcomeScores(state.scores, 'draw', null)
+  return {
+    ok: true,
+    state: {
+      ...state,
+      board,
+      currentPlayer: lastPlayer,
+      status: 'draw',
+      winner: null,
+      winningLine: null,
+      moveHistory,
+      scores,
+      ladderSize: state.boardSize,
       justGrew: false,
     },
   }

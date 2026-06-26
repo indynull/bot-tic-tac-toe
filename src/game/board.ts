@@ -196,6 +196,64 @@ export function hasImmediateWin(
   return false
 }
 
+const SEGMENT_DIRS: readonly [number, number][] = [
+  [0, 1],
+  [1, 0],
+  [1, 1],
+  [1, -1],
+]
+
+/**
+ * True if `player` still has at least one winLength segment containing only their
+ * marks and empties (with ≥1 empty). Opponent marks in a segment kill it forever.
+ * Used to avoid "dead" growth where 5-in-a-row is already impossible for everyone.
+ */
+export function hasOpenWinningLine(
+  board: Cell[],
+  boardSize: BoardSize,
+  winLength: number,
+  player: Player,
+): boolean {
+  const opp = player === 'X' ? 'O' : 'X'
+  for (let row = 0; row < boardSize; row++) {
+    for (let col = 0; col < boardSize; col++) {
+      for (const [dr, dc] of SEGMENT_DIRS) {
+        const endR = row + dr * (winLength - 1)
+        const endC = col + dc * (winLength - 1)
+        if (endR < 0 || endC < 0 || endR >= boardSize || endC >= boardSize) continue
+        let empty = 0
+        let blocked = false
+        let r = row
+        let c = col
+        for (let i = 0; i < winLength; i++) {
+          const cell = board[r * boardSize + c]
+          if (cell === opp) {
+            blocked = true
+            break
+          }
+          if (cell === null) empty++
+          r += dr
+          c += dc
+        }
+        if (!blocked && empty > 0) return true
+      }
+    }
+  }
+  return false
+}
+
+/** At least one side can still theoretically complete a winLength line. */
+export function positionHasWinningPotential(
+  board: Cell[],
+  boardSize: BoardSize,
+  winLength: number,
+): boolean {
+  return (
+    hasOpenWinningLine(board, boardSize, winLength, 'X') ||
+    hasOpenWinningLine(board, boardSize, winLength, 'O')
+  )
+}
+
 export interface GrowPlan {
   boardSize: BoardSize
   winLength: number
@@ -217,12 +275,29 @@ function noGrowthPlan(board: Cell[], boardSize: BoardSize): GrowPlan {
   }
 }
 
+function isSafeLiveGrowth(
+  grown: Cell[],
+  candidate: BoardSize,
+  winLength: number,
+  nextPlayer: Player,
+): boolean {
+  const outcome = evaluateBoard(grown, candidate, winLength)
+  if (outcome.status === 'won') return false
+  // No free win on the first move after growth.
+  if (hasImmediateWin(grown, candidate, winLength, nextPlayer)) return false
+  // Must still be possible for someone to get k-in-a-row (avoid dead 6×6 etc.).
+  if (!positionHasWinningPotential(grown, candidate, winLength)) return false
+  return true
+}
+
 /**
  * Plan in-place growth so play can continue after a would-be draw.
  * Prefers the smallest larger size, then top-left embed, then other offsets.
- * Rejects placements that are already a completed win **or** give `nextPlayer`
- * an immediate winning move on the expanded board (no free wins after growth).
- * If no safe placement exists up to max size, returns grew=false (scored draw).
+ * Rejects placements that:
+ *   - are already a completed win,
+ *   - give `nextPlayer` an immediate winning move, or
+ *   - leave **no** open winLength line for either player (dead position — grow further).
+ * If no safe live placement exists up to max size, returns grew=false (scored draw).
  */
 export function planBoardGrowth(
   board: Cell[],
@@ -240,9 +315,7 @@ export function planBoardGrowth(
     for (let rowOffset = 0; rowOffset <= maxOff; rowOffset++) {
       for (let colOffset = 0; colOffset <= maxOff; colOffset++) {
         const grown = embedBoard(board, boardSize, candidate, rowOffset, colOffset)
-        const outcome = evaluateBoard(grown, candidate, winLength)
-        if (outcome.status === 'won') continue
-        if (hasImmediateWin(grown, candidate, winLength, nextPlayer)) continue
+        if (!isSafeLiveGrowth(grown, candidate, winLength, nextPlayer)) continue
         return {
           boardSize: candidate,
           winLength,

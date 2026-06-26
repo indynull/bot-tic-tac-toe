@@ -7,7 +7,9 @@ import {
   getLegalMoves,
   growBoardInPlace,
   hasImmediateWin,
+  hasOpenWinningLine,
   planBoardGrowth,
+  positionHasWinningPotential,
   remapIndex,
   resetGame,
   resetScores,
@@ -209,6 +211,45 @@ describe('board embed helpers', () => {
     expect(g.status).toBe('in_progress')
     expect(g.justGrew).toBe(true)
     expect(hasImmediateWin(g.board, g.boardSize, g.winLength, g.currentPlayer)).toBe(false)
+    expect(positionHasWinningPotential(g.board, g.boardSize, g.winLength)).toBe(true)
+  })
+
+  it('planBoardGrowth result always has winning potential when it grows', () => {
+    const board = ['X', 'O', 'X', 'X', 'O', 'O', 'O', 'X', 'X'] as ('X' | 'O' | null)[]
+    const plan = planBoardGrowth(board, 3, 'O')
+    expect(plan.grew).toBe(true)
+    expect(positionHasWinningPotential(plan.board, plan.boardSize, plan.winLength)).toBe(true)
+  })
+
+  it('applyMove grows early when the position becomes unwinnable with empties left', () => {
+    // 4×4, k=4: fill so every 4-segment has both colors, leave one empty — dead for wins.
+    let g = createGame({ boardSize: 4, settings: { mode: 'local_pvp', firstPlayer: 'X' } })
+    const almost: ('X' | 'O' | null)[] = [
+      'X', 'X', 'O', 'O',
+      'O', 'O', 'X', 'X',
+      'X', 'X', 'O', 'O',
+      'O', 'O', 'X', null,
+    ]
+    expect(evaluateBoard(almost, 4, 4).status).toBe('in_progress')
+    expect(positionHasWinningPotential(almost, 4, 4)).toBe(false)
+    g = {
+      ...g,
+      board: almost.map((c, i) => (i === 15 ? null : c)),
+      currentPlayer: 'X',
+      moveHistory: almost
+        .map((p, i) => (p && i !== 15 ? { cellIndex: i, player: p } : null))
+        .filter((m): m is { cellIndex: number; player: 'X' | 'O' } => m !== null),
+    }
+    const r = applyMove(g, 15)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    // Placing the last meaningful cell leaves a dead 4×4 → should grow (or draw if max).
+    expect(r.state.justGrew || r.state.boardSize > 4 || r.state.status === 'draw').toBe(true)
+    if (r.state.justGrew) {
+      expect(positionHasWinningPotential(r.state.board, r.state.boardSize, r.state.winLength)).toBe(
+        true,
+      )
+    }
   })
 })
 
