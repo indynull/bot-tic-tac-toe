@@ -24,6 +24,7 @@ import {
   DEFAULT_BOARD_SIZE,
   DEFAULT_SCORES,
   DEFAULT_SETTINGS,
+  fortressesNeeded,
   MAX_BOARD_SIZE,
   nextDifficulty,
   shouldEscalateDifficulty,
@@ -72,12 +73,14 @@ export function createGame(options: CreateGameOptions = {}): GameState {
   const scores = options.scores ? cloneScores(options.scores) : { ...DEFAULT_SCORES }
   const boardSize = options.boardSize ?? DEFAULT_BOARD_SIZE
   const ladderSize = options.ladderSize ?? boardSize
+  const siege = settings.siegeMode === true
   return {
     boardSize,
     winLength: winLengthForBoard(boardSize),
     board: createEmptyBoard(boardSize),
     currentPlayer: settings.firstPlayer,
     status: 'in_progress',
+    phase: siege ? 'siege_setup' : 'playing',
     winner: null,
     winningLine: null,
     moveHistory: [],
@@ -86,7 +89,84 @@ export function createGame(options: CreateGameOptions = {}): GameState {
     ladderSize,
     justGrew: false,
     previousBoardSize: null,
+    fortresses: { X: [], O: [] },
+    revealedFortresses: [],
+    lastFortressHit: null,
   }
+}
+
+function cloneFortresses(f: GameState['fortresses']): GameState['fortresses'] {
+  return { X: [...(f?.X ?? [])], O: [...(f?.O ?? [])] }
+}
+
+/** Cells already used as anyone's fortress (setup cannot overlap). */
+function fortressOccupied(state: GameState, cellIndex: number): boolean {
+  return state.fortresses.X.includes(cellIndex) || state.fortresses.O.includes(cellIndex)
+}
+
+/**
+ * Place a secret fortress during siege setup (uses the "turn" for that side).
+ * When both sides have placed all fortresses, phase becomes `playing` and
+ * `currentPlayer` resets to `firstPlayer` for the opening mark.
+ */
+export function placeFortress(state: GameState, cellIndex: number): ApplyMoveResult {
+  if (!state.settings.siegeMode) return { ok: false, reason: 'not_siege' }
+  if (state.status !== 'in_progress') return { ok: false, reason: 'game_over' }
+  if (state.phase !== 'siege_setup') return { ok: false, reason: 'siege_complete' }
+  if (!isValidIndex(cellIndex, state.boardSize)) return { ok: false, reason: 'invalid_index' }
+  if (fortressOccupied(state, cellIndex)) return { ok: false, reason: 'fortress_taken' }
+
+  const player = state.currentPlayer
+  const need = fortressesNeeded(state.boardSize)
+  if (state.fortresses[player].length >= need) return { ok: false, reason: 'siege_complete' }
+
+  const fortresses = cloneFortresses(state.fortresses)
+  fortresses[player] = [...fortresses[player], cellIndex]
+
+  let next: GameState = {
+    ...state,
+    fortresses,
+    lastFortressHit: null,
+    justGrew: false,
+  }
+
+  const playerDone = fortresses[player].length >= need
+  if (playerDone) {
+    const other = opponent(player)
+    if (fortresses[other].length >= need) {
+      // Setup complete — first player opens with marks.
+      next = {
+        ...next,
+        phase: 'playing',
+        currentPlayer: state.settings.firstPlayer,
+      }
+    } else {
+      next = { ...next, currentPlayer: other }
+    }
+  }
+  // Same player places multiple fortresses in a row until their quota is filled.
+
+  return { ok: true, state: next }
+}
+
+/** AI picks fortress cells: prefer corners, then center, then edges; avoid overlaps. */
+export function chooseFortressCell(state: GameState): number {
+  const taken = new Set([...state.fortresses.X, ...state.fortresses.O])
+  const n = state.boardSize
+  const center = Math.floor(n / 2)
+  const priority: number[] = []
+  const push = (i: number) => {
+    if (i >= 0 && i < n * n && !taken.has(i)) priority.push(i)
+  }
+  push(0)
+  push(n - 1)
+  push((n - 1) * n)
+  push(n * n - 1)
+  push(center * n + center)
+  for (let i = 0; i < n * n; i++) push(i)
+  if (priority.length === 0) throw new Error('No fortress cells left')
+  // Slight jitter so AI isn't fully deterministic on ties beyond priority order.
+  return priority[0]!
 }
 
 /**
@@ -111,24 +191,38 @@ export function growBoardInPlace(
   if (settings.mode === 'vs_ai' && shouldEscalateDifficulty(fromSize)) {
     settings = { ...settings, difficulty: nextDifficulty(settings.difficulty) }
   }
+  const fortresses = cloneFortresses(state.fortresses)
+  fortresses.X = fortresses.X.map((i) => remapIndex(i, fromSize, toSize, rowOffset, colOffset))
+  fortresses.O = fortresses.O.map((i) => remapIndex(i, fromSize, toSize, rowOffset, colOffset))
+  const revealedFortresses = state.revealedFortresses.map((i) =>
+    remapIndex(i, fromSize, toSize, rowOffset, colOffset),
+  )
+
   return {
     ...state,
     boardSize: toSize,
     winLength,
     board,
     moveHistory,
+    fortresses,
+    revealedFortresses,
     settings,
     status: 'in_progress',
+    phase: state.phase === 'siege_setup' ? 'siege_setup' : 'playing',
     winner: null,
     winningLine: null,
     ladderSize: toSize,
     justGrew: true,
     previousBoardSize: fromSize,
+    lastFortressHit: null,
   }
 }
 
 export function applyMove(state: GameState, cellIndex: number): ApplyMoveResult {
   if (state.status !== 'in_progress') {
+    return { ok: false, reason: 'game_over' }
+  }
+  if (state.phase === 'siege_setup') {
     return { ok: false, reason: 'game_over' }
   }
   if (!isValidIndex(cellIndex, state.boardSize)) {
@@ -139,24 +233,48 @@ export function applyMove(state: GameState, cellIndex: number): ApplyMoveResult 
   }
 
   const player = state.currentPlayer
+  const enemy = opponent(player)
+  const fortresses = cloneFortresses(state.fortresses)
+  let revealedFortresses = [...(state.revealedFortresses ?? [])]
+  let hitFortress = false
+  let lastFortressHit: GameState['lastFortressHit'] = null
+
+  // Landing on an enemy fortress: place your mark and earn an extra turn.
+  const enemyForts = fortresses[enemy]
+  const hitIdx = enemyForts.indexOf(cellIndex)
+  if (hitIdx >= 0) {
+    hitFortress = true
+    fortresses[enemy] = enemyForts.filter((i) => i !== cellIndex)
+    if (!revealedFortresses.includes(cellIndex)) revealedFortresses = [...revealedFortresses, cellIndex]
+    lastFortressHit = { attacker: player, cellIndex }
+  }
+
   const board = setCell(state.board, cellIndex, player)
   const outcome = evaluateBoard(board, state.boardSize, state.winLength)
-  const move: Move = { cellIndex, player }
+  const move: Move = { cellIndex, player, hitFortress }
   const moveHistory = [...state.moveHistory, move]
-  const nextPlayer = opponent(player)
+  // Extra turn on fortress hit (unless the game already ended on this placement).
+  const nextPlayer = hitFortress && outcome.status === 'in_progress' ? player : opponent(player)
+
+  const siegePatch = {
+    fortresses,
+    revealedFortresses,
+    lastFortressHit,
+    phase: 'playing' as const,
+  }
 
   // Full board, no win → grow in place and keep playing when possible
   if (outcome.status === 'draw') {
-    return finalizeGrowthOrDraw(state, board, moveHistory, nextPlayer, player)
+    return finalizeGrowthOrDraw(state, board, moveHistory, nextPlayer, player, siegePatch)
   }
 
-  let scores = state.scores
   if (outcome.status === 'won') {
-    scores = applyOutcomeScores(state.scores, outcome.status, outcome.winner)
+    const scores = applyOutcomeScores(state.scores, outcome.status, outcome.winner)
     return {
       ok: true,
       state: {
         ...state,
+        ...siegePatch,
         board,
         currentPlayer: player,
         status: 'won',
@@ -176,7 +294,7 @@ export function applyMove(state: GameState, cellIndex: number): ApplyMoveResult 
     state.boardSize < MAX_BOARD_SIZE &&
     !positionHasWinningPotential(board, state.boardSize, state.winLength)
   ) {
-    const grown = finalizeGrowthOrDraw(state, board, moveHistory, nextPlayer, player)
+    const grown = finalizeGrowthOrDraw(state, board, moveHistory, nextPlayer, player, siegePatch)
     if (grown.ok && (grown.state.justGrew || grown.state.status === 'draw')) {
       return grown
     }
@@ -186,18 +304,24 @@ export function applyMove(state: GameState, cellIndex: number): ApplyMoveResult 
     ok: true,
     state: {
       ...state,
+      ...siegePatch,
       board,
       currentPlayer: nextPlayer,
       status: 'in_progress',
       winner: null,
       winningLine: null,
       moveHistory,
-      scores,
+      scores: state.scores,
       ladderSize: state.ladderSize,
       justGrew: false,
     },
   }
 }
+
+type SiegeBoardPatch = Pick<
+  GameState,
+  'fortresses' | 'revealedFortresses' | 'lastFortressHit' | 'phase'
+>
 
 /**
  * Attempt in-place growth for `nextPlayer` to move; otherwise score a draw.
@@ -208,11 +332,13 @@ function finalizeGrowthOrDraw(
   moveHistory: Move[],
   nextPlayer: Player,
   lastPlayer: Player,
+  siegePatch?: SiegeBoardPatch,
 ): ApplyMoveResult {
   const plan = planBoardGrowth(board, state.boardSize, nextPlayer)
+  const base = siegePatch ? { ...state, ...siegePatch } : state
   if (plan.grew) {
     const withMove: GameState = {
-      ...state,
+      ...base,
       board,
       moveHistory,
       justGrew: false,
@@ -231,7 +357,7 @@ function finalizeGrowthOrDraw(
   return {
     ok: true,
     state: {
-      ...state,
+      ...base,
       board,
       currentPlayer: lastPlayer,
       status: 'draw',
@@ -294,18 +420,53 @@ export function updateSettings(state: GameState, partial: Partial<Settings>): Ga
   }
 }
 
+/**
+ * Replay mark history (not fortresses). Fortress state is not undone for v1 simplicity —
+ * undo only rewinds marks / scores while phase stays `playing` if siege was on.
+ */
+function replayMarks(
+  firstPlayer: Player,
+  boardSize: BoardSize,
+  history: Move[],
+): { board: Cell[]; currentPlayer: Player } {
+  const board = createEmptyBoard(boardSize)
+  let currentPlayer = firstPlayer
+  for (const move of history) {
+    board[move.cellIndex] = move.player
+    currentPlayer = move.hitFortress ? move.player : opponent(move.player)
+  }
+  return { board, currentPlayer }
+}
+
 /** Undo one move. In vs_ai, callers should typically undo twice (human+AI pair). */
 export function undoMove(state: GameState): GameState {
+  if (state.phase === 'siege_setup') {
+    // Pop last fortress for current setup player if any; else previous player.
+    const fortresses = cloneFortresses(state.fortresses)
+    let player = state.currentPlayer
+    if (fortresses[player].length === 0) {
+      player = opponent(player)
+    }
+    if (fortresses[player].length === 0) return state
+    fortresses[player] = fortresses[player].slice(0, -1)
+    return {
+      ...state,
+      fortresses,
+      phase: 'siege_setup',
+      currentPlayer: player,
+      lastFortressHit: null,
+      justGrew: false,
+    }
+  }
+
   if (state.moveHistory.length === 0) return state
 
   const history = state.moveHistory.slice(0, -1)
-  const board = createEmptyBoard(state.boardSize)
-  let currentPlayer = state.settings.firstPlayer
-
-  for (const move of history) {
-    board[move.cellIndex] = move.player
-    currentPlayer = opponent(move.player)
-  }
+  const { board, currentPlayer } = replayMarks(
+    state.settings.firstPlayer,
+    state.boardSize,
+    history,
+  )
 
   const outcome = evaluateBoard(board, state.boardSize, state.winLength)
 
@@ -317,6 +478,7 @@ export function undoMove(state: GameState): GameState {
   }
 
   // Size is sticky after in-place growth (undo does not shrink the grid)
+  // Fortress lists are not perfectly restored on mark-undo (v1); hits stay revealed.
   return {
     ...state,
     board,
@@ -327,6 +489,8 @@ export function undoMove(state: GameState): GameState {
     moveHistory: history,
     scores,
     justGrew: false,
+    lastFortressHit: null,
+    phase: 'playing',
   }
 }
 
@@ -335,6 +499,9 @@ export function undoMove(state: GameState): GameState {
  * in PvP, remove one move.
  */
 export function undoLastTurn(state: GameState): GameState {
+  if (state.phase === 'siege_setup') {
+    return undoMove(state)
+  }
   if (state.moveHistory.length === 0) return state
 
   if (state.settings.mode === 'vs_ai') {
@@ -350,6 +517,14 @@ export function undoLastTurn(state: GameState): GameState {
 
 export function getLegalMoves(state: GameState): number[] {
   if (state.status !== 'in_progress') return []
+  if (state.phase === 'siege_setup') {
+    const taken = new Set([...state.fortresses.X, ...state.fortresses.O])
+    const out: number[] = []
+    for (let i = 0; i < state.boardSize * state.boardSize; i++) {
+      if (!taken.has(i)) out.push(i)
+    }
+    return out
+  }
   return getEmptyCells(state.board)
 }
 
@@ -357,6 +532,10 @@ export function isAiTurn(state: GameState): boolean {
   if (state.settings.mode !== 'vs_ai') return false
   if (state.status !== 'in_progress') return false
   return state.currentPlayer !== state.settings.humanPlayer
+}
+
+export function isSiegeSetup(state: GameState): boolean {
+  return state.settings.siegeMode === true && state.phase === 'siege_setup'
 }
 
 export function getAiPlayer(state: GameState): Player {

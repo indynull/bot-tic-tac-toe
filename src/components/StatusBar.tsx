@@ -1,5 +1,5 @@
 import type { GameState } from '../game'
-import { MAX_BOARD_SIZE, winRuleLabel } from '../game'
+import { fortressesNeeded, MAX_BOARD_SIZE, winRuleLabel } from '../game'
 import styles from '../styles/StatusBar.module.css'
 
 interface StatusBarProps {
@@ -24,7 +24,28 @@ function boardPrefix(game: GameState): string {
 }
 
 export function getStatusMessage(game: GameState, aiThinking: boolean): string {
-  if (aiThinking) return aiThinkingMessage(game.settings.difficulty)
+  if (aiThinking) {
+    if (game.phase === 'siege_setup') return 'Computer is placing fortresses…'
+    return aiThinkingMessage(game.settings.difficulty)
+  }
+
+  if (game.lastFortressHit) {
+    const h = game.lastFortressHit
+    return `Siege! ${h.attacker} hit a fortress — extra turn for ${h.attacker}.`
+  }
+
+  if (game.settings.siegeMode && game.phase === 'siege_setup') {
+    const need = fortressesNeeded(game.boardSize)
+    const have = game.fortresses[game.currentPlayer]?.length ?? 0
+    const left = need - have
+    if (game.settings.mode === 'local_pvp') {
+      return `Siege setup — ${game.currentPlayer} place fortress (${have}/${need}, ${left} left). Pass the device; keep it secret.`
+    }
+    if (game.currentPlayer === game.settings.humanPlayer) {
+      return `Siege setup — place your fortress (${have}/${need}). Enemy forts stay hidden.`
+    }
+    return 'Siege setup — computer is placing fortresses…'
+  }
 
   if (game.justGrew && game.previousBoardSize != null) {
     const from = game.previousBoardSize
@@ -76,7 +97,7 @@ export function StatusBar({ game, aiThinking }: StatusBarProps) {
   const message = getStatusMessage(game, aiThinking)
   const tone =
     game.status === 'won' ? styles.won : game.status === 'draw' ? styles.draw : styles.progress
-  const live = game.justGrew ? 'assertive' : 'polite'
+  const live = game.justGrew || game.lastFortressHit ? 'assertive' : 'polite'
 
   return (
     <div className={`${styles.status} ${tone}`} role="status" aria-live={live} aria-atomic="true">

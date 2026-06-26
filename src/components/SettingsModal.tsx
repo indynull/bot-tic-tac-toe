@@ -12,6 +12,7 @@ interface SettingsModalProps {
   onHumanPlayer: (p: Player) => void
   onTheme: (t: Theme) => void
   onSound: (enabled: boolean) => void
+  onSiegeMode: (enabled: boolean) => void
 }
 
 export function SettingsModal({
@@ -23,6 +24,7 @@ export function SettingsModal({
   onHumanPlayer,
   onTheme,
   onSound,
+  onSiegeMode,
 }: SettingsModalProps) {
   if (!open) return null
 
@@ -92,6 +94,23 @@ export function SettingsModal({
             />
             <span>Sound effects</span>
           </label>
+
+          <label className={styles.check}>
+            <input
+              type="checkbox"
+              checked={settings.siegeMode}
+              onChange={(e) => onSiegeMode(e.target.checked)}
+            />
+            <span>Siege mode (Battleship-lite)</span>
+          </label>
+          {settings.siegeMode && (
+            <p className={styles.hint} role="note">
+              Each side secretly places 2 fortresses, then plays normally. Land on an enemy fortress
+              to claim the cell and take an <strong>extra turn</strong>. Local PvP: pass the device
+              during setup so forts stay hidden. Starts a new game when toggled. (Online PvP is not
+              available on GitHub Pages alone.)
+            </p>
+          )}
         </div>
 
         <footer className={styles.footer}>

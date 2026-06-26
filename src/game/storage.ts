@@ -28,6 +28,7 @@ function isScores(v: unknown): v is Scores {
 function isSettings(v: unknown): v is Settings {
   if (!v || typeof v !== 'object') return false
   const s = v as Record<string, unknown>
+  const siegeOk = s.siegeMode === undefined || typeof s.siegeMode === 'boolean'
   return (
     isPlayer(s.firstPlayer) &&
     isPlayer(s.humanPlayer) &&
@@ -37,8 +38,17 @@ function isSettings(v: unknown): v is Settings {
       s.difficulty === 'hard' ||
       s.difficulty === 'impossible') &&
     (s.theme === 'light' || s.theme === 'dark') &&
-    typeof s.soundEnabled === 'boolean'
+    typeof s.soundEnabled === 'boolean' &&
+    siegeOk
   )
+}
+
+function normalizeSettings(raw: Settings): Settings {
+  return {
+    ...DEFAULT_SETTINGS,
+    ...raw,
+    siegeMode: raw.siegeMode === true,
+  }
 }
 
 /** Migrate v1/v2 progression (may include obsolete pendingEscalation) → v3 shape. */
@@ -79,7 +89,7 @@ export function deserializePersisted(raw: string | null): PersistedData | null {
     return {
       version: STORAGE_VERSION,
       scores: obj.scores,
-      settings: obj.settings,
+      settings: normalizeSettings(obj.settings),
       progression,
     }
   } catch {

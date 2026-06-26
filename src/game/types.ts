@@ -3,9 +3,14 @@
 export type Player = 'X' | 'O'
 export type Cell = Player | null
 export type GameStatus = 'in_progress' | 'won' | 'draw'
+/** Phase within an in-progress game (siege setup vs normal play). */
+export type GamePhase = 'siege_setup' | 'playing'
 export type GameMode = 'local_pvp' | 'vs_ai'
 export type Difficulty = 'easy' | 'medium' | 'hard' | 'impossible'
 export type Theme = 'light' | 'dark'
+
+/** Secret fortresses each side places before play in siege mode. */
+export const FORTRESSES_PER_PLAYER = 2
 
 /** Square board dimension (3 = classic 3×3). Escalates after draws up to mini-gomoku sizes. */
 export type BoardSize = 3 | 4 | 5 | 6 | 7 | 8 | 9
@@ -31,11 +36,18 @@ export interface Settings {
   difficulty: Difficulty
   theme: Theme
   soundEnabled: boolean
+  /**
+   * Siege (Battleship-lite): each side secretly places fortresses, then plays TTT.
+   * Landing on an enemy fortress scores your mark and grants an extra turn.
+   */
+  siegeMode: boolean
 }
 
 export interface Move {
   cellIndex: number
   player: Player
+  /** True if this placement hit an opponent fortress (extra turn). */
+  hitFortress?: boolean
 }
 
 export interface GameState {
@@ -46,6 +58,8 @@ export interface GameState {
   board: Cell[]
   currentPlayer: Player
   status: GameStatus
+  /** siege_setup while placing fortresses; playing for normal marks. */
+  phase: GamePhase
   winner: Player | null
   winningLine: number[] | null
   moveHistory: Move[]
@@ -63,6 +77,12 @@ export interface GameState {
   justGrew: boolean
   /** Board size before the most recent in-place growth (status copy); null if never grew this session. */
   previousBoardSize: BoardSize | null
+  /** Secret fortress cell indices per player (intact until hit). */
+  fortresses: Record<Player, number[]>
+  /** Fortress cells that have been hit (revealed on the board). */
+  revealedFortresses: number[]
+  /** Last action hit an enemy fortress (status / extra-turn copy). */
+  lastFortressHit: { attacker: Player; cellIndex: number } | null
 }
 
 export type MoveErrorReason =
@@ -70,6 +90,10 @@ export type MoveErrorReason =
   | 'cell_occupied'
   | 'invalid_index'
   | 'wrong_turn'
+  | 'not_siege'
+  | 'siege_complete'
+  | 'fortress_taken'
+  | 'own_fortress'
 
 export type ApplyMoveResult =
   | { ok: true; state: GameState }
@@ -158,6 +182,11 @@ export const DEFAULT_SETTINGS: Settings = {
   difficulty: 'impossible',
   theme: 'light',
   soundEnabled: false,
+  siegeMode: false,
+}
+
+export function fortressesNeeded(_boardSize: BoardSize): number {
+  return FORTRESSES_PER_PLAYER
 }
 
 export const STORAGE_KEY = 'ttt-v1'

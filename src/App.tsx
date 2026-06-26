@@ -52,8 +52,11 @@ export default function App() {
           boardSize={ctrl.game.boardSize}
           winningLine={ctrl.game.winningLine}
           status={ctrl.game.status}
+          phase={ctrl.game.phase}
           disabled={ctrl.boardLocked}
           onCellClick={ctrl.placeMark}
+          fortresses={ctrl.visibleFortresses}
+          revealedFortresses={ctrl.game.revealedFortresses}
         />
 
         <Controls
@@ -69,7 +72,11 @@ export default function App() {
       </main>
 
       <footer className={appStyles.footer}>
-        <p>Keyboard: Tab to cells, Enter/Space to place. Scores &amp; settings save in this browser.</p>
+        <p>
+          Keyboard: Tab to cells, Enter/Space to place
+          {ctrl.game.settings.siegeMode ? ' (fortresses in setup, then marks)' : ''}. Scores &amp;
+          settings save in this browser.
+        </p>
       </footer>
 
       <SettingsModal
@@ -81,6 +88,7 @@ export default function App() {
         onHumanPlayer={ctrl.setHumanPlayer}
         onTheme={ctrl.setTheme}
         onSound={ctrl.setSoundEnabled}
+        onSiegeMode={ctrl.setSiegeMode}
       />
     </div>
   )

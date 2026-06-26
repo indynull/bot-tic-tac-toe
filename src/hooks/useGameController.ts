@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   applyMove,
+  chooseFortressCell,
   chooseMove,
   createGame,
   isAiTurn,
+  isSiegeSetup,
   loadPersisted,
+  placeFortress,
   resetGame,
   resetScores,
   savePersisted,
@@ -90,55 +93,73 @@ export function useGameController() {
   }, [game.settings.theme])
 
   const runAiMove = useCallback((state: GameState) => {
-    clearAiTimer()
     if (!isAiTurn(state)) {
       setAiThinking(false)
       return
     }
+    clearAiTimer()
+    gameRef.current = state
     setAiThinking(true)
     const startedAt = performance.now()
     const minThink = minThinkMs(state.settings.difficulty, state.boardSize)
+    const setup = isSiegeSetup(state)
 
-    // Yield one tick so “thinking” status can paint, then compute + apply within budget.
     aiTimerRef.current = setTimeout(() => {
       aiTimerRef.current = null
       try {
-        const current = gameRef.current
-        if (!isAiTurn(current)) {
+        let board = isAiTurn(gameRef.current) ? gameRef.current : state
+        if (!isAiTurn(board)) board = state
+        if (!isAiTurn(board)) {
           setAiThinking(false)
           return
         }
-        const move = chooseMove(current)
-        const elapsed = performance.now() - startedAt
-        // Pad for a brief think feel, but never miss the sub-second budget.
-        const wait = Math.max(
-          0,
-          Math.min(minThink - elapsed, AI_RESPONSE_BUDGET_MS - elapsed),
-        )
 
-        const commit = () => {
+        const act = () => {
           try {
-            const latestBoard = gameRef.current
-            if (!isAiTurn(latestBoard)) return
-            const pick =
-              latestBoard.moveHistory.length === current.moveHistory.length
-                ? move
-                : chooseMove(latestBoard)
-            const result = applyMove(latestBoard, pick)
-            if (result.ok) setGame(result.state)
+            const latest = isAiTurn(gameRef.current) ? gameRef.current : board
+            let result
+            if (isSiegeSetup(latest)) {
+              // Place all remaining fortresses for the AI in one "thinking" burst.
+              let s = latest
+              while (isAiTurn(s) && isSiegeSetup(s)) {
+                const cell = chooseFortressCell(s)
+                const r = placeFortress(s, cell)
+                if (!r.ok) break
+                s = r.state
+              }
+              gameRef.current = s
+              setGame(s)
+              // If setup finished and AI opens marks, loop will re-enter via effect.
+            } else {
+              const pick = chooseMove(latest)
+              result = applyMove(latest, pick)
+              if (result.ok) {
+                gameRef.current = result.state
+                setGame(result.state)
+                // Extra turn after fortress hit — keep AI going.
+                if (isAiTurn(result.state) && result.state.lastFortressHit) {
+                  setTimeout(() => runAiMove(result!.state), 0)
+                  return
+                }
+              }
+            }
           } catch {
-            // no legal moves
+            // ignore
           } finally {
             setAiThinking(false)
           }
         }
 
-        if (wait <= 0) {
-          commit()
-        } else {
+        const elapsed = performance.now() - startedAt
+        const wait = Math.max(
+          0,
+          Math.min(minThink - elapsed, AI_RESPONSE_BUDGET_MS - elapsed),
+        )
+        if (wait <= 0 || setup) act()
+        else {
           aiTimerRef.current = setTimeout(() => {
             aiTimerRef.current = null
-            commit()
+            act()
           }, wait)
         }
       } catch {
@@ -147,15 +168,12 @@ export function useGameController() {
     }, 0)
   }, [clearAiTimer])
 
-  // Trigger AI when it's their turn
+  // Trigger AI when it's their turn (setup fortresses or marks)
   useEffect(() => {
     if (isAiTurn(game) && !aiThinking && aiTimerRef.current === null) {
       runAiMove(game)
     }
-    return () => {
-      // cleanup only on unmount handled separately
-    }
-  }, [game, aiThinking, runAiMove])
+  }, [game, game.phase, game.currentPlayer, game.moveHistory.length, aiThinking, runAiMove])
 
   useEffect(() => {
     return () => clearAiTimer()
@@ -166,12 +184,25 @@ export function useGameController() {
       const current = gameRef.current
       if (aiThinking || isAiTurn(current)) return
       if (current.status !== 'in_progress') return
-      const result = applyMove(current, cellIndex)
+      const result = isSiegeSetup(current)
+        ? placeFortress(current, cellIndex)
+        : applyMove(current, cellIndex)
       if (result.ok) {
+        gameRef.current = result.state
         setGame(result.state)
+        if (isAiTurn(result.state)) {
+          runAiMove(result.state)
+        } else if (
+          result.state.phase === 'playing' &&
+          result.state.lastFortressHit &&
+          result.state.currentPlayer === result.state.lastFortressHit.attacker &&
+          isAiTurn({ ...result.state, currentPlayer: result.state.currentPlayer })
+        ) {
+          // human hit fortress — they play again; no AI
+        }
       }
     },
-    [aiThinking],
+    [aiThinking, runAiMove],
   )
 
   const newGame = useCallback(() => {
@@ -261,7 +292,31 @@ export function useGameController() {
     [patchSettings],
   )
 
+  const setSiegeMode = useCallback(
+    (siegeMode: boolean) => patchSettings({ siegeMode }, true),
+    [patchSettings],
+  )
+
   const boardLocked = aiThinking || isAiTurn(game) || game.status !== 'in_progress'
+
+  /** Own fortresses during setup; revealed hits always; never show intact enemy forts. */
+  const visibleFortresses: number[] = (() => {
+    if (!game.settings.siegeMode) return []
+    const revealed = game.revealedFortresses ?? []
+    if (game.phase === 'siege_setup') {
+      const mine =
+        game.settings.mode === 'vs_ai'
+          ? game.fortresses[game.settings.humanPlayer] ?? []
+          : game.fortresses[game.currentPlayer] ?? []
+      return [...new Set([...mine, ...revealed])]
+    }
+    if (game.settings.mode === 'vs_ai') {
+      const mine = game.fortresses[game.settings.humanPlayer] ?? []
+      return [...new Set([...mine, ...revealed])]
+    }
+    // Local PvP: only show revealed (hits); intact forts stay secret on the shared screen.
+    return [...revealed]
+  })()
 
   return {
     game,
@@ -269,6 +324,7 @@ export function useGameController() {
     boardLocked,
     settingsOpen,
     setSettingsOpen,
+    visibleFortresses,
     placeMark,
     newGame,
     doResetScores,
@@ -279,6 +335,7 @@ export function useGameController() {
     setSoundEnabled,
     setFirstPlayer,
     setHumanPlayer,
+    setSiegeMode,
     patchSettings,
   }
 }
